@@ -4,7 +4,8 @@ from datetime import datetime
 import os
 import traceback
 import pandas as pd
-import numpy as np
+import jax.numpy as jnp
+from jax import random
 
 from .metric import Metrics
 
@@ -19,13 +20,13 @@ class Executer:
 
     Parameters
     ----------
-    X_train : np.ndarray
+    X_train : jnp.ndarray
         训练集的X。
-    y_train : np.ndarray
+    y_train : jnp.ndarray
         训练集的y。
-    X_test : np.ndarray
+    X_test : jnp.ndarray
         测试集的X。
-    y_test : np.ndarray
+    y_test : jnp.ndarray
         测试集的y。
     clf_dict : dict
         Clf字典。包含多个实验的{name : Clf}
@@ -47,13 +48,13 @@ class Executer:
 
         Parameters
         ----------
-        X_train : np.ndarray
+        X_train : jnp.ndarray
             训练集的X。
-        y_train : np.ndarray
+        y_train : jnp.ndarray
             训练集的y。
-        X_test : np.ndarray
+        X_test : jnp.ndarray
             测试集的X。
-        y_test : np.ndarray
+        y_test : jnp.ndarray
             测试集的y。
         clf_dict : dict
             Clf字典。包含多个实验的{name : Clf}
@@ -251,13 +252,13 @@ class NonValidExecuter(Executer):
 
     Parameters
     ----------
-    X_train : np.ndarray
+    X_train : jnp.ndarray
         训练集的X。
-    y_train : np.ndarray
+    y_train : jnp.ndarray
         训练集的y。
-    X_test : np.ndarray
+    X_test : jnp.ndarray
         测试集的X。
-    y_test : np.ndarray
+    y_test : jnp.ndarray
         测试集的y。
     clf_dict : dict
         Clf字典。包含多个实验的{name : Clf}
@@ -289,13 +290,13 @@ class KFlodCrossExecuter(Executer):
 
     Parameters
     ----------
-    X_train : np.ndarray
+    X_train : jnp.ndarray
         训练集的X。
-    y_train : np.ndarray
+    y_train : jnp.ndarray
         训练集的y。
-    X_test : np.ndarray
+    X_test : jnp.ndarray
         测试集的X。
-    y_test : np.ndarray
+    y_test : jnp.ndarray
         测试集的y。
     clf_dict : dict
         Clf字典。包含多个实验的{name : Clf}
@@ -370,12 +371,12 @@ class KFlodCrossExecuter(Executer):
         print(f'>> {name}')
 
         # k折交叉验证
-        k_fold_x_train = np.array_split(self.X_train, self.k)
-        k_fold_y_train = np.array_split(self.y_train, self.k)
+        k_fold_x_train = jnp.array_split(self.X_train, self.k)
+        k_fold_y_train = jnp.array_split(self.y_train, self.k)
         mtcs = []
         for i in range(self.k):
-            x_train = np.concatenate(k_fold_x_train[:i] + k_fold_x_train[i + 1:])
-            y_train = np.concatenate(k_fold_y_train[:i] + k_fold_y_train[i + 1:])
+            x_train = jnp.concatenate(k_fold_x_train[:i] + k_fold_x_train[i + 1:])
+            y_train = jnp.concatenate(k_fold_y_train[:i] + k_fold_y_train[i + 1:])
             x_test = k_fold_x_train[i]
             y_test = k_fold_y_train[i]
             clf.fit(x_train, y_train)
@@ -417,10 +418,10 @@ class KFlodCrossExecuter(Executer):
         self.test.loc[len(self.test)] = [name] + getline(test_mtc)  # 获取测试的结果
 
         valid_rows = [getline(mtc) for mtc in mtcs]
-        valids_array = np.array(valid_rows)
+        valids_array = jnp.array(valid_rows)
 
-        mean_vals = np.mean(valids_array, axis=0).tolist()
-        std_vals = np.std(valids_array, axis=0).tolist()
+        mean_vals = jnp.mean(valids_array, axis=0).tolist()
+        std_vals = jnp.std(valids_array, axis=0).tolist()
 
         valid_result = []
         for mean, std in zip(mean_vals, std_vals):
@@ -471,13 +472,13 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
 
     Parameters
     ----------
-    X_train : np.ndarray
+    X_train : jnp.ndarray
         训练集的X。
-    y_train : np.ndarray
+    y_train : jnp.ndarray
         训练集的y。
-    X_test : np.ndarray
+    X_test : jnp.ndarray
         测试集的X。
-    y_test : np.ndarray
+    y_test : jnp.ndarray
         测试集的y。
     clf_dict : dict
         Clf字典。包含多个实验的{name : Clf}
@@ -513,13 +514,13 @@ class BootstrapExecuter(Executer):
 
     Parameters
     ----------
-    X_train : np.ndarray
+    X_train : jnp.ndarray
         训练集的X。
-    y_train : np.ndarray
+    y_train : jnp.ndarray
         训练集的y。
-    X_test : np.ndarray
+    X_test : jnp.ndarray
         测试集的X。
-    y_test : np.ndarray
+    y_test : jnp.ndarray
         测试集的y。
     clf_dict : dict
         Clf字典。包含多个实验的{name : Clf}
@@ -552,7 +553,7 @@ class BootstrapExecuter(Executer):
         def __resample(X, y):
             # Bootstrap 采样。
 
-            indices = np.random.choice(len(X), size=len(X), replace=True)
+            indices = random.choice(len(X), size=len(X), replace=True)
             return X[indices], y[indices]
 
         print(f'>> {name}')
@@ -595,10 +596,10 @@ class BootstrapExecuter(Executer):
         self.df.loc[len(self.df)] = [name] + getline(test_mtc)
 
         valid_rows = [getline(mtc) for mtc in mtcs]
-        valids_array = np.array(valid_rows)
+        valids_array = jnp.array(valid_rows)
 
-        mean_vals = np.mean(valids_array, axis=0).tolist()
-        std_vals = np.std(valids_array, axis=0).tolist()
+        mean_vals = jnp.mean(valids_array, axis=0).tolist()
+        std_vals = jnp.std(valids_array, axis=0).tolist()
 
         valid_result = []
         for mean, std in zip(mean_vals, std_vals):

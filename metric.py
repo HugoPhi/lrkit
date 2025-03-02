@@ -1,4 +1,4 @@
-import numpy as np
+import jax.numpy as jnp
 
 
 class Metrics:
@@ -8,15 +8,15 @@ class Metrics:
     Examples
     --------
     ```python
-    y_true = np.array([0, 1, 2])         # 真实标签
-    y_pred = np.array([[0.7, 0.1, 0.2],  # 对应样本的预测概率，一行为一个样本
+    y_true = jnp.array([0, 1, 2])         # 真实标签
+    y_pred = jnp.array([[0.7, 0.1, 0.2],  # 对应样本的预测概率，一行为一个样本
                        [0.3, 0.3, 0.4],
                        [0.2, 0.1, 0.7]])
     ```
     尤其是二分类，一定要做成两类：
     ```python
-    y_true = np.array([0, 1])       # 真实标签
-    y_pred = np.array([[0.9, 0.1],  # 对应样本的预测概率，一行为一个样本
+    y_true = jnp.array([0, 1])       # 真实标签
+    y_pred = jnp.array([[0.9, 0.1],  # 对应样本的预测概率，一行为一个样本
                        [0.3, 0.7],
                        [0.2, 0.8]]
     ```
@@ -28,9 +28,9 @@ class Metrics:
 
         Parameters
         ----------
-        y : np.ndarray
+        y : jnp.ndarray
             真实标签。
-        y_pred : np.ndarray
+        y_pred : jnp.ndarray
             预测标签。
         proba : bool
             输入是否为概率向量。
@@ -39,16 +39,16 @@ class Metrics:
         self.proba = proba
         self.y = y
         self.y_pred = y_pred
-        uni = np.unique(self.y)
+        uni = jnp.unique(self.y)
         if uni[0] != 0:
             raise ValueError('y must start from 0')
 
         self.classes = uni.shape[0]  # get classes num
 
-        self.matrix = np.zeros((self.classes, self.classes))  # get confusion matrix
+        self.matrix = jnp.zeros((self.classes, self.classes))  # get confusion matrix
 
         if self.proba:
-            for i, j in zip(y, np.argmax(y_pred, axis=1)):
+            for i, j in zip(y, jnp.argmax(y_pred, axis=1)):
                 self.matrix[i, j] += 1
         else:
             for i, j in zip(y, y_pred):
@@ -65,7 +65,7 @@ class Metrics:
         numpy.ndarray
             The precision of each class.
         '''
-        return np.diag(self.matrix) / self.matrix.sum(axis=0)
+        return jnp.diag(self.matrix) / self.matrix.sum(axis=0)
 
     def recall(self):
         '''
@@ -79,7 +79,7 @@ class Metrics:
             The recall of each class.
         '''
 
-        return np.diag(self.matrix) / self.matrix.sum(axis=1)
+        return jnp.diag(self.matrix) / self.matrix.sum(axis=1)
 
     def f1(self):
         '''
@@ -107,7 +107,7 @@ class Metrics:
             The accuracy of the model.
         '''
 
-        return np.diag(self.matrix).sum() / self.matrix.sum()
+        return jnp.diag(self.matrix).sum() / self.matrix.sum()
 
     def roc(self):
         '''
@@ -126,10 +126,10 @@ class Metrics:
             raise ValueError('roc() can only be called when proba == True')
 
         def calculate_tpr_fpr(y_true, y_pred):
-            tp = np.sum((y_pred == 1) & (y_true == 1))
-            tn = np.sum((y_pred == 0) & (y_true == 0))
-            fp = np.sum((y_pred == 1) & (y_true == 0))
-            fn = np.sum((y_pred == 0) & (y_true == 1))
+            tp = jnp.sum((y_pred == 1) & (y_true == 1))
+            tn = jnp.sum((y_pred == 0) & (y_true == 0))
+            fp = jnp.sum((y_pred == 1) & (y_true == 0))
+            fn = jnp.sum((y_pred == 0) & (y_true == 1))
 
             tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
             fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
@@ -140,7 +140,7 @@ class Metrics:
             tprs = []
             fprs = []
             thresholds = self.y_pred[:, class_idx].reshape(-1)
-            for threshold in np.sort(thresholds)[::-1]:
+            for threshold in jnp.sort(thresholds)[::-1]:
                 idx_pred = (self.y_pred[:, class_idx] >= threshold).astype(int)  # '=' here is important
                 idx_true = (self.y == class_idx).astype(int).reshape(-1)
                 tpr, fpr = calculate_tpr_fpr(idx_true, idx_pred)
@@ -174,7 +174,7 @@ class Metrics:
                 auc += (fprs[i] - fprs[i - 1]) * (tprs[i] + tprs[i - 1]) / 2
             aucs.append(auc)
 
-        return np.array(aucs)
+        return jnp.array(aucs)
 
     def ap(self):
         '''
@@ -192,9 +192,9 @@ class Metrics:
             raise ValueError('ap() can only be called when proba == True')
 
         def calculate_prec_rec(y_true, y_pred):
-            tp = np.sum((y_pred == 1) & (y_true == 1))
-            fp = np.sum((y_pred == 1) & (y_true == 0))
-            fn = np.sum((y_pred == 0) & (y_true == 1))
+            tp = jnp.sum((y_pred == 1) & (y_true == 1))
+            fp = jnp.sum((y_pred == 1) & (y_true == 0))
+            fn = jnp.sum((y_pred == 0) & (y_true == 1))
 
             prec = tp / (tp + fp) if (tp + fp) > 0 else 0
             rec = tp / (tp + fn) if (fp + fn) > 0 else 0
@@ -205,7 +205,7 @@ class Metrics:
             precs = []
             recs = []
             thresholds = self.y_pred[:, class_idx].reshape(-1)
-            for threshold in np.sort(thresholds)[::-1]:
+            for threshold in jnp.sort(thresholds)[::-1]:
                 idx_pred = (self.y_pred[:, class_idx] >= threshold).astype(int)  # '=' here is important
                 idx_true = (self.y == class_idx).astype(int).reshape(-1)
                 prec, rec = calculate_prec_rec(idx_true, idx_pred)
