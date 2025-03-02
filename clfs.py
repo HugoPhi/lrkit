@@ -1,7 +1,37 @@
 from abc import ABC, abstractmethod
+import time
+from functools import wraps
 import inspect
 from typing import Tuple, Dict
 from numpy.typing import NDArray
+import numpy as np
+
+
+def timing(func):
+    '''
+    统计训练和测试时间的修饰器。
+    '''
+
+    if func.__name__ in ['predict', 'predict_proba']:
+        @wraps(func)
+        def wrapper(self_obj, *args, **kwargs):
+            start_time = time.time()
+            result = func(self_obj, *args, **kwargs)
+            elapsed_time = time.time() - start_time
+            self_obj.testing_time = elapsed_time
+            return result
+        return wrapper
+    elif func.__name__ in ['fit']:
+        @wraps(func)
+        def wrapper(self_obj, *args, **kwargs):
+            start_time = time.time()
+            result = func(self_obj, *args, **kwargs)
+            elapsed_time = time.time() - start_time
+            self_obj.training_time = elapsed_time
+            return result
+        return wrapper
+    else:
+        raise ValueError(f'{func.__name__} is not timable. Only fit, predict and predict_proba are timable.')
 
 
 class Clfs(ABC):
@@ -19,6 +49,12 @@ class Clfs(ABC):
     -----
     1. 这样的接口设计可以使得学习器的训练和学习过程有一个同一的API，便于不同框架下模型的对比
     2. 这套接口让'预测器'和将要使用的数据集分割开；让预测器和模型的具体架构分割开
+
+    另外，这些接口是纯虚的，必须在子类中实现：
+
+    - init
+    - fit
+    - predict_proba
     '''
 
     def __new__(cls, *args, **kwargs):
@@ -54,7 +90,6 @@ class Clfs(ABC):
         self.training_time = -1
         self.testing_time = -1
 
-    @abstractmethod
     def predict(self, x_test) -> NDArray:
         '''
         根据模型计算结果。直接返回预测结果。
@@ -70,7 +105,8 @@ class Clfs(ABC):
             测试集
         '''
 
-        pass
+        proba = self.predict_proba(x_test)
+        return np.argmax(proba, axis=1)
 
     @abstractmethod
     def predict_proba(self, x_test) -> NDArray:
@@ -118,7 +154,6 @@ class Clfs(ABC):
 
         return self.params
 
-    @abstractmethod
     def get_training_time(self):
         '''
         返回最近一次模型训练的时间。
@@ -128,9 +163,8 @@ class Clfs(ABC):
           - 返回训练模型的时间，通常返回self.training_time
         '''
 
-        pass
+        return self.training_time
 
-    @abstractmethod
     def get_testing_time(self):
         '''
         返回最近一次模型测试的时间。
@@ -140,4 +174,4 @@ class Clfs(ABC):
           - 返回最近一次模型测试的时间，通常返回self.testing_time
         '''
 
-        pass
+        return self.testing_time
