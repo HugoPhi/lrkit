@@ -16,7 +16,7 @@ def timing(func):
             start_time = time.time()
             result = func(self_obj, *args, **kwargs)
             elapsed_time = time.time() - start_time
-            self_obj.testing_time += elapsed_time
+            self_obj.testing_time = elapsed_time
             return result
         return wrapper
     elif func.__name__ in ['fit']:
@@ -25,7 +25,7 @@ def timing(func):
             start_time = time.time()
             result = func(self_obj, *args, **kwargs)
             elapsed_time = time.time() - start_time
-            self_obj.training_time += elapsed_time
+            self_obj.training_time = elapsed_time
             return result
         return wrapper
     else:
