@@ -1,3 +1,3 @@
 # Learn Kit
 
-this is a test frame work for learning algorithms. 
+this is a task-oriented test frame work for learning algorithms. 
