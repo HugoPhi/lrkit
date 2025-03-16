@@ -6,7 +6,7 @@ class Metrics:
     分类模型的评价指标。
     '''
 
-    def __init__(self, y, y_pred, proba=True, classes=None):
+    def __init__(self, y, y_pred, classes=None):
         '''
         初始化。y必须从0开始。
 
@@ -16,11 +16,10 @@ class Metrics:
             真实标签。
         y_pred : jnp.ndarray
             预测标签。
-        proba : bool
-            输入是否为概率向量。
+        classes : int
+            分类的类别，通常在样本数量较小，或者无法包含所有类别的时候用，默认是None。
         '''
 
-        self.proba = proba
         self.y = y
         self.y_pred = y_pred
 
@@ -32,16 +31,24 @@ class Metrics:
 
         self.matrix = jnp.zeros((self.classes, self.classes))  # get confusion matrix
 
-        if self.proba:
-            for i, j in zip(y, jnp.argmax(y_pred, axis=1)):
-                self.matrix = self.matrix.at[i, j].set(
-                    self.matrix[i, j] + 1
-                )
+        if len(self.y.shape) == 1:
+            temp_y = self.y
+        elif len(self.y.shape) == 2:
+            temp_y = jnp.argmax(self.y, axis=1)
         else:
-            for i, j in zip(y, y_pred):
-                self.matrix = self.matrix.at[i, j].set(
-                    self.matrix[i, j] + 1
-                )
+            raise ValueError('Input y must be 1D or 2D.')
+
+        if len(self.y_pred.shape) == 1:
+            temp_y_pred = self.y_pred
+        if len(self.y_pred.shape) == 2:
+            temp_y_pred = jnp.argmax(self.y_pred, axis=1)
+        elif len(self.y_pred.shape) > 2:
+            raise ValueError('Input y_pred must be 1D or 2D.')
+
+        for i, j in zip(temp_y, temp_y_pred):
+            self.matrix = self.matrix.at[i, j].set(
+                self.matrix[i, j] + 1
+            )
 
     def precision(self):
         '''

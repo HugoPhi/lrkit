@@ -147,7 +147,7 @@ class Executer:
 
         y_pred = clf.predict(self.X_test)
 
-        mtc = Metrics(self.y_test, y_pred, proba=False)  # 构建测试器
+        mtc = Metrics(self.y_test, y_pred)  # 构建测试器
         print(f'Testing {name} Cost: {clf.get_testing_time():.4f} s')
 
         return mtc, clf  # 返回测试器和分类器
@@ -384,7 +384,7 @@ class KFlodCrossExecuter(Executer):
             clf.fit(x_train, y_train)
 
             y_pred = clf.predict(x_test)
-            mtc = Metrics(y_test, y_pred, proba=False)
+            mtc = Metrics(y_test, y_pred)
             mtcs.append(mtc)
 
         # real train & test
@@ -393,7 +393,7 @@ class KFlodCrossExecuter(Executer):
 
         y_pred = clf.predict(self.X_test)
 
-        mtc = Metrics(self.y_test, y_pred, proba=False)  # 构建测试器
+        mtc = Metrics(self.y_test, y_pred)  # 构建测试器
         mtcs.append(mtc)
         print(f'Testing {name} Cost: {clf.get_testing_time():.4f} s')
 
@@ -574,7 +574,7 @@ class BootstrapExecuter(Executer):
             clf.fit(X_resampled, y_resampled)
 
             y_pred = clf.predict(X_resampled)
-            mtc = Metrics(y_resampled, y_pred, proba=False)
+            mtc = Metrics(y_resampled, y_pred)
             mtcs.append(mtc)
 
         # 真实的训练和测试
@@ -582,7 +582,7 @@ class BootstrapExecuter(Executer):
         print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
 
         y_pred = clf.predict(self.X_test)
-        mtc = Metrics(self.y_test, y_pred, proba=False)
+        mtc = Metrics(self.y_test, y_pred)
         mtcs.append(mtc)
         print(f'Testing {name} Cost: {clf.get_testing_time():.4f} s')
 
