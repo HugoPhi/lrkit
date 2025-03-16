@@ -1,0 +1,3 @@
+model,accuracy,macro_f1,micro_f1,avg_recall,training time,testing time
+clf1,0.45,nan,nan,0.5,1.5132317543029785,0.01900029182434082
+clf2,0.45,nan,nan,0.5,1.5002686977386475,0.0002913475036621094

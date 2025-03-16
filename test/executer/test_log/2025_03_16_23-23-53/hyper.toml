@@ -1,0 +1,5 @@
+[clf1]
+model = "SimpleClassifier"
+
+[clf2]
+model = "SimpleClassifier"
