@@ -4,27 +4,11 @@ import jax.numpy as jnp
 class Metrics:
     '''
     分类模型的评价指标。
-
-    Examples
-    --------
-    ```python
-    y_true = jnp.array([0, 1, 2])         # 真实标签
-    y_pred = jnp.array([[0.7, 0.1, 0.2],  # 对应样本的预测概率，一行为一个样本
-                       [0.3, 0.3, 0.4],
-                       [0.2, 0.1, 0.7]])
-    ```
-    尤其是二分类，一定要做成两类：
-    ```python
-    y_true = jnp.array([0, 1])       # 真实标签
-    y_pred = jnp.array([[0.9, 0.1],  # 对应样本的预测概率，一行为一个样本
-                       [0.3, 0.7],
-                       [0.2, 0.8]]
-    ```
     '''
 
-    def __init__(self, y, y_pred, proba=True):
+    def __init__(self, y, y_pred, proba=True, classes=None):
         '''
-        初始化。
+        初始化。y必须从0开始。
 
         Parameters
         ----------
@@ -39,20 +23,25 @@ class Metrics:
         self.proba = proba
         self.y = y
         self.y_pred = y_pred
-        uni = jnp.unique(self.y)
-        if uni[0] != 0:
-            raise ValueError('y must start from 0')
 
-        self.classes = uni.shape[0]  # get classes num
+        if classes is not None:
+            self.classes = classes
+        else:
+            uni = jnp.unique(self.y)
+            self.classes = uni.shape[0]  # get classes num
 
         self.matrix = jnp.zeros((self.classes, self.classes))  # get confusion matrix
 
         if self.proba:
             for i, j in zip(y, jnp.argmax(y_pred, axis=1)):
-                self.matrix[i, j] += 1
+                self.matrix = self.matrix.at[i, j].set(
+                    self.matrix[i, j] + 1
+                )
         else:
             for i, j in zip(y, y_pred):
-                self.matrix[i, j] += 1
+                self.matrix = self.matrix.at[i, j].set(
+                    self.matrix[i, j] + 1
+                )
 
     def precision(self):
         '''
@@ -217,7 +206,7 @@ class Metrics:
                 ap += (recs[i] - recs[i - 1]) * (precs[i] + precs[i - 1]) / 2
             aps.append(ap)
 
-        return aps
+        return jnp.array(aps)
 
     def avg_ap(self):
         '''

@@ -325,6 +325,8 @@ class KFlodCrossExecuter(Executer):
             raise ValueError(f'k should >= 1, but get {self.k}')
 
         metrics = self.metric_list + ['training time', 'testing time']
+
+        self.test = pd.DataFrame(columns=['model'] + metrics)
         self.valid = pd.DataFrame(columns=['model'] + [f'{x}_{suffix}' for x in metrics for suffix in ['mean', 'std']])
 
     def execute(self, name, clf):
@@ -539,29 +541,36 @@ class BootstrapExecuter(Executer):
                  metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
                  n_bootstraps=100,
                  log=False,
+                 random_state=42,
                  log_dir='./log/'):
 
         super(BootstrapExecuter, self).__init__(X_train, y_train, X_test, y_test,
                                                 clf_dict, metric_list, log, log_dir)
 
         self.n_bootstraps = n_bootstraps
+        self.random_state = random_state
+
         metrics = self.metric_list + ['training time', 'testing time']
+
+        self.test = pd.DataFrame(columns=['model'] + metrics)
         self.valid = pd.DataFrame(columns=['model'] + [f'{x}_{suffix}' for x in metrics for suffix in ['mean', 'std']])
 
     def execute(self, name, clf):
 
-        def __resample(X, y):
+        def __resample(key, X, y):
             # Bootstrap 采样。
 
-            indices = random.choice(len(X), size=len(X), replace=True)
-            return X[indices], y[indices]
+            key, subkey = random.split(key)
+            indices = random.choice(subkey, len(X), shape=(len(X),), replace=True)
+            return key, X[indices], y[indices]
 
         print(f'>> {name}')
 
         mtcs = []
+        key = random.PRNGKey(self.random_state)
         for _ in range(self.n_bootstraps):
             # Bootstrap 采样
-            X_resampled, y_resampled = __resample(self.X_train, self.y_train)
+            key, X_resampled, y_resampled = __resample(key, self.X_train, self.y_train)
             clf.fit(X_resampled, y_resampled)
 
             y_pred = clf.predict(X_resampled)
