@@ -11,8 +11,18 @@ from jax import random
 from .metric import Metrics
 
 
-def combine_mean_std(df):
-    # by DeepSeek.
+def combine_mean_std(df, precision=4):
+    """
+    by DeepSeek.
+    合并 _mean 和 _std 列，格式为 mean ± std，并限制浮点数的精度。
+
+    参数:
+        df (pd.DataFrame): 包含 _mean 和 _std 列的 DataFrame。
+        precision (int): 浮点数的精度（小数位数），默认为 4。
+
+    返回:
+        pd.DataFrame: 合并后的 DataFrame。
+    """
     # 获取所有包含 _mean 和 _std 的列
     mean_cols = [col for col in df.columns if col.endswith('_mean')]
     std_cols = [col for col in df.columns if col.endswith('_std')]
@@ -25,9 +35,9 @@ def combine_mean_std(df):
         # 提取指标名称（去掉 _mean 和 _std）
         metric_name = mean_col.replace('_mean', '')
 
-        # 合并 mean 和 std 列
+        # 合并 mean 和 std 列，并限制浮点数精度
         combined_df[metric_name] = (
-            df[mean_col].astype(str) + " ± " + df[std_col].astype(str)
+            df[mean_col].round(precision).astype(str) + " ± " + df[std_col].round(precision).astype(str)
         )
 
     # 添加 model 列
@@ -238,47 +248,65 @@ class Executer:
             print(f'Error: {e}')
             traceback.print_exc()
 
-    def format_print(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False):
+    def format_print(self, sort_by='accuracy', ascending=False, precision=4, time=False):
         '''
         表格的格式化输出。
 
         Parameters
         ----------
         sort_by : str
-            按照哪个指标进行排序。接受两个位置，分别是测试和验证的指标。比如：('accuracy', 'accuracy_mean')，表示测试集按照accuracy指标进行排序，验证集按照accuracy_mean指标进行排序。
+            按照哪个指标进行排序。比如：'accuracy'，表示测试集按照accuracy指标进行排序。
         ascending : bool
             是否升序。
+        precision : int
+            保留几位小数。
+        time: bool
+            是否显示训练和测试时间。
         '''
 
         if sort_by is not None:
-            print('>> Test:')
+            print(f'\n>> Test Result, sort by \'{sort_by}\'.')
+            if not time:
+                temp_table = self.df.sort_values(sort_by, ascending=ascending).drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.df.sort_values(sort_by, ascending=ascending)
+
             print(tabulate(
-                self.test.sort_values(sort_by[0], ascending=ascending),
+                temp_table,
                 headers='keys',
-                tablefmt='grid',
-                floatfmt=".4f",
-                showindex=False
-            ))
-        else:
-            print('>> Test:')
-            print(tabulate(
-                self.test,
-                headers='keys',
-                tablefmt='grid',
-                floatfmt=".4f",
+                tablefmt='fancy_grid',
+                floatfmt='.4f',
                 showindex=False
             ))
 
-    def run_all(self, sort_by=None, ascending=False):
+        else:
+            print('\n>> Test Result.')
+            if not time:
+                temp_table = self.df.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.df
+            print(tabulate(
+                temp_table,
+                headers='keys',
+                tablefmt='fancy_grid',
+                floatfmt='.4f',
+                showindex=False
+            ))
+
+    def run_all(self, sort_by=None, ascending=False, precision=4, time=False):
         '''
         运行所有实验。
 
         Parameters
         ----------
         sort_by : str
-            按照哪个指标进行排序。
+            按照哪个指标进行排序。比如：'accuracy'，表示测试集按照accuracy指标进行排序。
         ascending : bool
             是否升序。
+        precision : int
+            保留几位小数。
+        time: bool
+            是否显示训练和测试时间。
         '''
 
         for name, clf in self.clf_dict.items():
@@ -286,7 +314,7 @@ class Executer:
 
             self.logline(name, mtc, clf)
 
-        self.format_print(sort_by, ascending)
+        self.format_print(sort_by, ascending, precision, time)
 
     def get_result(self):
         '''
@@ -434,6 +462,7 @@ class KFlodCrossExecuter(Executer):
         k_fold_y_train = jnp.array_split(self.y_train, self.k)
         mtcs = []
         for i in range(self.k):
+            print(f'>>>> Validate: {i + 1}')
             x_train = jnp.concatenate(k_fold_x_train[:i] + k_fold_x_train[i + 1:])
             y_train = jnp.concatenate(k_fold_y_train[:i] + k_fold_y_train[i + 1:])
             x_test = k_fold_x_train[i]
@@ -445,6 +474,7 @@ class KFlodCrossExecuter(Executer):
             mtcs.append(mtc)
 
         # real train & test
+        print('>>>> Test:')
         clf.fit(self.X_train, self.y_train)  # 训练分类器
         print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
 
@@ -496,7 +526,7 @@ class KFlodCrossExecuter(Executer):
         self.test.to_csv(os.path.join(self.log_path, 'test.csv'), index=False)
         self.valid.to_csv(os.path.join(self.log_path, 'valid.csv'), index=False)
 
-    def format_print(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False):
+    def format_print(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False, precision=4, time=False):
         '''
         表格的格式化输出。
 
@@ -509,55 +539,76 @@ class KFlodCrossExecuter(Executer):
         '''
 
         if sort_by is not None:
-            print('>> Test:')
+            print(f'\n>> Test Result, sort by \'{sort_by[0]}\'.')
+            if not time:
+                temp_table = self.test.sort_values(sort_by[0], ascending=ascending).drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.test.sort_values(sort_by[0], ascending=ascending)
             print(tabulate(
-                self.test.sort_values(sort_by[0], ascending=ascending),
+                temp_table,
                 headers='keys',
-                tablefmt='grid',
-                floatfmt=".4f",
+                tablefmt='fancy_grid',
+                floatfmt='.4f',
                 showindex=False
             ))
 
-            print('\n>> Validation (Mean ± Std):')
-            self.valid = self.valid.sort_values(sort_by[1], ascending=ascending)
-            valid_stats = combine_mean_std(self.valid)
+            print(f'\n>> Validation Result(Mean ± Std), sort by \'{sort_by[1]}\'.')
+            if not time:
+                temp_table = self.valid.sort_values(sort_by[1], ascending=ascending)
+                temp_table = combine_mean_std(temp_table, precision=precision)
+                temp_table = temp_table.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.valid.sort_values(sort_by[1], ascending=ascending)
+                temp_table = combine_mean_std(temp_table, precision=precision)
             print(tabulate(
-                valid_stats,
+                temp_table,
                 headers='keys',
-                tablefmt='grid',
-                floatfmt=".4f",
+                tablefmt='fancy_grid',
                 showindex=False
             ))
         else:
-            print('>> Test:')
+            print('\n>> Test Result.')
+            if not time:
+                temp_table = self.test.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.test
             print(tabulate(
-                self.test,
+                temp_table,
                 headers='keys',
-                tablefmt='grid',
-                floatfmt=".4f",
+                tablefmt='fancy_grid',
+                floatfmt='.4f',
                 showindex=False
             ))
 
-            print('\n>> Validation (Mean ± Std):')
-            valid_stats = combine_mean_std(self.valid)
+            print('\n>> Validation Result(Mean ± Std).')
+            if not time:
+                temp_table = self.valid
+                temp_table = combine_mean_std(temp_table, precision=precision)
+                temp_table = temp_table.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.valid
+                temp_table = combine_mean_std(temp_table, precision=precision)
             print(tabulate(
-                valid_stats,
+                temp_table,
                 headers='keys',
-                tablefmt='grid',
-                floatfmt=".4f",
+                tablefmt='fancy_grid',
                 showindex=False
             ))
 
-    def run_all(self, sort_by=['accuracy', 'accuracy_mean'], ascending=False):
+    def run_all(self, sort_by=['accuracy', 'accuracy_mean'], ascending=False, precision=4, time=False):
         '''
         运行所有实验。
 
         Parameters
         ----------
         sort_by : str
-            按照哪个指标进行排序。
+            按照哪个指标进行排序。接受两个位置，分别是测试和验证的指标。比如：('accuracy', 'accuracy_mean')，表示测试集按照accuracy指标进行排序，验证集按照accuracy_mean指标进行排序。
         ascending : bool
             是否升序。
+        precision : int
+            保留几位小数。
+        time: bool
+            是否显示训练和测试时间。
         '''
 
         for name, clf in self.clf_dict.items():
@@ -565,7 +616,7 @@ class KFlodCrossExecuter(Executer):
 
             self.logline(name, mtc, clf)
 
-        self.format_print(sort_by, ascending)
+        self.format_print(sort_by, ascending, precision, time)
 
 
 class LeaveOneCrossExecuter(KFlodCrossExecuter):
@@ -662,18 +713,41 @@ class BootstrapExecuter(Executer):
     def execute(self, name, clf):
 
         def __resample(key, X, y):
-            # Bootstrap 采样。
+            """
+            执行Bootstrap采样。
 
+            参数:
+            - key: JAX随机数生成器的键
+            - X: 特征矩阵（JAX数组）
+            - y: 标签向量（JAX数组）
+
+            返回:
+            - 新的key: 更新后的随机数生成器键
+            - X_resampled: 经过Bootstrap采样后的特征矩阵
+            - y_resampled: 对应的标签向量
+            """
+            # 分裂当前的key以获得新的子key，并更新key
             key, subkey = random.split(key)
-            indices = random.choice(subkey, len(X), shape=(len(X),), replace=True)
-            return key, X[indices], y[indices]
+
+            # 获取样本数量
+            n_samples = len(X)
+
+            # 使用random.choice从原始索引中有放回地抽取样本
+            indices = random.choice(subkey, jnp.arange(n_samples), shape=(n_samples,), replace=True)
+
+            # 根据抽样得到的索引获取重采样的X和y
+            X_resampled = X[indices]
+            y_resampled = y[indices]
+
+            return key, X_resampled, y_resampled
 
         print(f'>> {name}')
 
         mtcs = []
         key = random.PRNGKey(self.random_state)
-        for _ in range(self.n_bootstraps):
+        for i in range(self.n_bootstraps):
             # Bootstrap 采样
+            print(f'>>>> Validate: {i + 1}')
             key, X_resampled, y_resampled = __resample(key, self.X_train, self.y_train)
             clf.fit(X_resampled, y_resampled)
 
@@ -682,6 +756,7 @@ class BootstrapExecuter(Executer):
             mtcs.append(mtc)
 
         # 真实的训练和测试
+        print('>>>> Test:')
         clf.fit(self.X_train, self.y_train)
         print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
 
@@ -725,7 +800,7 @@ class BootstrapExecuter(Executer):
         super().save_df()
         self.valid.to_csv(os.path.join(self.log_path, 'valid.csv'), index=False)
 
-    def format_print(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False):
+    def format_print(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False, precision=4, time=False):
         '''
         表格的格式化输出。
 
@@ -735,44 +810,88 @@ class BootstrapExecuter(Executer):
             按照哪个指标进行排序。接受两个位置，分别是测试和验证的指标。比如：('accuracy', 'accuracy_mean')，表示测试集按照accuracy指标进行排序，验证集按照accuracy_mean指标进行排序。
         ascending : bool
             是否升序。
+        precision : int
+            保留几位小数。
+        time: bool
+            是否显示训练和测试时间。
         '''
 
         if sort_by is not None:
-            print('>> Test:')
+            print(f'\n>> Test Result, sort by \'{sort_by[0]}\'.')
+            if not time:
+                temp_table = self.test.sort_values(sort_by[0], ascending=ascending).drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.test.sort_values(sort_by[0], ascending=ascending)
             print(tabulate(
-                self.test.sort_values(sort_by[0], ascending=ascending),
+                temp_table,
                 headers='keys',
-                tablefmt='grid',
-                floatfmt=".4f",
+                tablefmt='fancy_grid',
+                floatfmt='.4f',
                 showindex=False
             ))
 
-            print('\n>> Validation (Mean ± Std):')
-            self.valid = self.valid.sort_values(sort_by[1], ascending=ascending)
-            valid_stats = combine_mean_std(self.valid)
+            print(f'\n>> Validation Result(Mean ± Std), sort by \'{sort_by[1]}\'.')
+            if not time:
+                temp_table = self.valid.sort_values(sort_by[1], ascending=ascending)
+                temp_table = combine_mean_std(temp_table, precision=precision)
+                temp_table = temp_table.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.valid.sort_values(sort_by[1], ascending=ascending)
+                temp_table = combine_mean_std(temp_table, precision=precision)
             print(tabulate(
-                valid_stats,
+                temp_table,
                 headers='keys',
-                tablefmt='grid',
-                floatfmt=".4f",
+                tablefmt='fancy_grid',
                 showindex=False
             ))
         else:
-            print('>> Test:')
+            print('\n>> Test Result.')
+            if not time:
+                temp_table = self.test.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.test
             print(tabulate(
-                self.test,
+                temp_table,
                 headers='keys',
-                tablefmt='grid',
-                floatfmt=".4f",
+                tablefmt='fancy_grid',
+                floatfmt='.4f',
                 showindex=False
             ))
 
-            print('\n>> Validation (Mean ± Std):')
-            valid_stats = combine_mean_std(self.valid)
+            print('\n>> Validation Result(Mean ± Std).')
+            if not time:
+                temp_table = self.valid
+                temp_table = combine_mean_std(temp_table, precision=precision)
+                temp_table = temp_table.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.valid
+                temp_table = combine_mean_std(temp_table, precision=precision)
             print(tabulate(
-                valid_stats,
+                temp_table,
                 headers='keys',
-                tablefmt='grid',
-                floatfmt=".4f",
+                tablefmt='fancy_grid',
                 showindex=False
             ))
+
+    def run_all(self, sort_by=['accuracy', 'accuracy_mean'], ascending=False, precision=4, time=False):
+        '''
+        运行所有实验。
+
+        Parameters
+        ----------
+        sort_by : str
+            按照哪个指标进行排序。接受两个位置，分别是测试和验证的指标。比如：('accuracy', 'accuracy_mean')，表示测试集按照accuracy指标进行排序，验证集按照accuracy_mean指标进行排序。
+        ascending : bool
+            是否升序。
+        precision : int
+            保留几位小数。
+        time: bool
+            是否显示训练和测试时间。
+        '''
+
+        for name, clf in self.clf_dict.items():
+            mtc, clf = self.execute(name, clf)
+
+            self.logline(name, mtc, clf)
+
+        self.format_print(sort_by, ascending, precision, time)
