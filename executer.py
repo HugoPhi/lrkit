@@ -1,13 +1,42 @@
 import atexit
-import toml
 from datetime import datetime
+import toml
 import os
 import traceback
+from tabulate import tabulate
 import pandas as pd
 import jax.numpy as jnp
 from jax import random
 
 from .metric import Metrics
+
+
+def combine_mean_std(df):
+    # by DeepSeek.
+    # 获取所有包含 _mean 和 _std 的列
+    mean_cols = [col for col in df.columns if col.endswith('_mean')]
+    std_cols = [col for col in df.columns if col.endswith('_std')]
+
+    # 创建一个新的 DataFrame 来存储合并后的结果
+    combined_df = pd.DataFrame()
+
+    # 合并 mean 和 std 列
+    for mean_col, std_col in zip(mean_cols, std_cols):
+        # 提取指标名称（去掉 _mean 和 _std）
+        metric_name = mean_col.replace('_mean', '')
+
+        # 合并 mean 和 std 列
+        combined_df[metric_name] = (
+            df[mean_col].astype(str) + " ± " + df[std_col].astype(str)
+        )
+
+    # 添加 model 列
+    combined_df['model'] = df['model']
+
+    # 重新排列列顺序，确保 model 在第一列
+    combined_df = combined_df[['model'] + [col for col in combined_df.columns if col != 'model']]
+
+    return combined_df
 
 
 class Executer:
@@ -439,6 +468,58 @@ class KFlodCrossExecuter(Executer):
         self.test.to_csv(os.path.join(self.log_path, 'test.csv'), index=False)
         self.valid.to_csv(os.path.join(self.log_path, 'valid.csv'), index=False)
 
+    def format_print(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False):
+        '''
+        表格的格式化输出。
+
+        Parameters
+        ----------
+        sort_by : str
+            按照哪个指标进行排序。接受两个位置，分别是测试和验证的指标。比如：('accuracy', 'accuracy_mean')，表示测试集按照accuracy指标进行排序，验证集按照accuracy_mean指标进行排序。
+        ascending : bool
+            是否升序。
+        '''
+
+        if sort_by is not None:
+            print('>> Test:')
+            print(tabulate(
+                self.test.sort_values(sort_by[0], ascending=ascending),
+                headers='keys',
+                tablefmt='grid',
+                floatfmt=".4f",
+                showindex=False
+            ))
+
+            print('\n>> Validation (Mean ± Std):')
+            self.valid = self.valid.sort_values(sort_by[1], ascending=ascending)
+            valid_stats = combine_mean_std(self.valid)
+            print(tabulate(
+                valid_stats,
+                headers='keys',
+                tablefmt='grid',
+                floatfmt=".4f",
+                showindex=False
+            ))
+        else:
+            print('>> Test:')
+            print(tabulate(
+                self.test,
+                headers='keys',
+                tablefmt='grid',
+                floatfmt=".4f",
+                showindex=False
+            ))
+
+            print('\n>> Validation (Mean ± Std):')
+            valid_stats = combine_mean_std(self.valid)
+            print(tabulate(
+                valid_stats,
+                headers='keys',
+                tablefmt='grid',
+                floatfmt=".4f",
+                showindex=False
+            ))
+
     def run_all(self, sort_by=['accuracy', 'accuracy_mean'], ascending=False):
         '''
         运行所有实验。
@@ -456,12 +537,7 @@ class KFlodCrossExecuter(Executer):
 
             self.logline(name, mtc, clf)
 
-        if sort_by is not None:
-            print(self.test.sort_values(sort_by[0], ascending=ascending))
-            print(self.valid.sort_values(sort_by[1], ascending=ascending))
-        else:
-            print(self.test)
-            print(self.valid)
+        self.format_print(sort_by, ascending)
 
 
 class LeaveOneCrossExecuter(KFlodCrossExecuter):
