@@ -1,11 +1,12 @@
-# Learn Kit
+# Learn Kit, Jax API version
 
-this is a task-oriented test frame work for learning algorithms. 
+Jax version of lrkit. 
 
 ## Dependencies
 
 - numpy
 - toml
+- tabulate
 
 ## ScreenShot
 
