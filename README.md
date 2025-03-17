@@ -28,7 +28,7 @@ setup(
 then install by pip under Debug: 
 
 ```bash
-pip install . -e
+pip install -e .
 ```
 
 ## Dependencies
