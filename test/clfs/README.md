@@ -1,4 +1,4 @@
-## 2. 分类器接口测试 (`test_clfs.py`)
+## 分类器接口测试 (`test_clfs.py`)
 
 ### 测试目的
 验证 `Clfs` 抽象类及其子类的以下功能：
@@ -29,13 +29,3 @@ pytest test_clfs.py -v
 1. 测试类必须实现 `predict_proba` 并返回 JAX 数组
 2. `fit` 方法需要包含 `load=False` 参数
 3. 自定义参数需要通过 `__init__` 显式声明
-
----
-
-### 文档使用建议
-1. 将两个 README 分别保存为 `TEST_METRICS_README.md` 和 `TEST_CLFS_README.md`
-2. 与对应测试文件放在同一目录
-3. 可通过以下命令快速查看测试说明：
-   ```bash
-   cat TEST_*_README.md | less
-   ```
