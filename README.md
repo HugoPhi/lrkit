@@ -1,8 +1,9 @@
-# Learn Kit
+# Learn Kit Numpy API version
 
-this is a task-oriented test frame work for learning algorithms. 
+Numpy version of lrkit.
 
 ## Dependencies
 
 - numpy
 - toml
+- tabulate
