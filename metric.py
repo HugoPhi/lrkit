@@ -45,6 +45,11 @@ class Metrics:
         elif len(self.y_pred.shape) > 2:
             raise ValueError('Input y_pred must be 1D or 2D.')
 
+        if len(self.y.shape) == 2 and len(self.y_pred.shape) == 2:
+            self.proba = True
+        else:
+            self.proba = False
+
         for i, j in zip(temp_y, temp_y_pred):
             self.matrix = self.matrix.at[i, j].set(
                 self.matrix[i, j] + 1
@@ -119,7 +124,7 @@ class Metrics:
         '''
 
         if not self.proba:
-            raise ValueError('roc() can only be called when proba == True')
+            raise ValueError('roc() can only be called when y & y_pred are proba matrix')
 
         def calculate_tpr_fpr(y_true, y_pred):
             tp = jnp.sum((y_pred == 1) & (y_true == 1))
@@ -160,7 +165,7 @@ class Metrics:
         '''
 
         if not self.proba:
-            raise ValueError('auc() can only be called when proba == True')
+            raise ValueError('auc() can only be called when y & y_pred are proba matrix')
 
         rocs = self.roc()
         aucs = []
@@ -185,7 +190,7 @@ class Metrics:
         '''
 
         if not self.proba:
-            raise ValueError('ap() can only be called when proba == True')
+            raise ValueError('ap() can only be called when y & y_pred are proba matrix')
 
         def calculate_prec_rec(y_true, y_pred):
             tp = jnp.sum((y_pred == 1) & (y_true == 1))
@@ -226,7 +231,7 @@ class Metrics:
         '''
 
         if not self.proba:
-            raise ValueError('avg_ap() can only be called when proba == True')
+            raise ValueError('avg_ap() can only be called when y & y_pred are proba matrix')
 
         return self.ap().mean()
 
