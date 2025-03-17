@@ -4,6 +4,7 @@ This is a task-oriented test frame work for learning algorithms. We provide two 
 
 ```bash
 git submodule add -b jax https://github.com/tibless/lrkit.git ./plugins/lrkit
+# git submodule add -b numpy https://github.com/tibless/lrkit.git ./plugins/lrkit  # use numpy version
 git submodule sync
 ```
 
