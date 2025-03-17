@@ -189,9 +189,11 @@ class Executer:
         mtc = Metrics(self.y_test, y_pred)  # 构建测试器
         print(f'Testing {name} Cost: {clf.get_testing_time():.4f} s')
 
-        return mtc, clf  # 返回测试器和分类器
+        time = [clf.get_training_time(), clf.get_testing_time()]
 
-    def logline(self, name, mtc, clf):
+        return mtc, clf, time  # 返回测试器和分类器
+
+    def logline(self, name, mtc, clf, time):
         '''
         将某次实验的结果写入日志df。
         '''
@@ -204,11 +206,11 @@ class Executer:
             else:
                 raise ValueError(f'{metric} is not in Metric.')
 
-        self.df.loc[len(self.df)] = [name] + [func() for func in func_list] + [clf.get_training_time(), clf.get_testing_time()]
+        self.df.loc[len(self.df)] = [name] + [func() for func in func_list] + time
 
     def run(self, key):
         '''
-        运行单个实验。不会消耗clf_dict。
+        运行单个实验。不会消耗clf_dict。同时会写入日志。
 
         Parameters
         ----------
@@ -216,15 +218,15 @@ class Executer:
             实验的名字。
         '''
         if key in self.clf_dict.keys():
-            mtc, clf = self.execute(key, self.clf_dict[key])
+            mtc, clf, time = self.execute(key, self.clf_dict[key])
 
-            self.logline(key, mtc, clf)
+            self.logline(key, mtc, clf, time)
         else:
             raise KeyError(f'{key} is not in clf_dict')
 
     def step(self):
         '''
-        迭代运行实验。采用迭代器模式。会逐个消耗实验，直到clf_dict为空。过程中会返回对应的名字和Clf对象，如果是最后一个，返回None。
+        迭代运行实验。采用迭代器模式。会逐个消耗实验，直到clf_dict为空。过程中会返回对应的名字和Clf对象，如果是最后一个，返回None。同时会写入日志。
 
         Returns
         -------
@@ -239,9 +241,9 @@ class Executer:
         try:
             name, clf = self.clf_dict.popitem()
 
-            mtc, clf = self.execute(name, clf)
+            mtc, clf, time = self.execute(name, clf)
 
-            self.logline(name, mtc, clf)
+            self.logline(name, mtc, clf, time)
 
             return name, clf
         except Exception as e:
@@ -310,9 +312,9 @@ class Executer:
         '''
 
         for name, clf in self.clf_dict.items():
-            mtc, clf = self.execute(name, clf)
+            mtc, clf, time = self.execute(name, clf)
 
-            self.logline(name, mtc, clf)
+            self.logline(name, mtc, clf, time)
 
         self.format_print(sort_by, ascending, precision, time)
 
@@ -416,7 +418,7 @@ class KFlodCrossExecuter(Executer):
 
     def execute(self, name, clf):
         '''
-        执行实验。
+        执行实验，不记录日志。
 
         Notes
         -----
@@ -461,6 +463,7 @@ class KFlodCrossExecuter(Executer):
         k_fold_x_train = jnp.array_split(self.X_train, self.k)
         k_fold_y_train = jnp.array_split(self.y_train, self.k)
         mtcs = []
+        times = []  # validation training, teting time + test training, testing time
         for i in range(self.k):
             print(f'>>>> Validate: {i + 1}')
             x_train = jnp.concatenate(k_fold_x_train[:i] + k_fold_x_train[i + 1:])
@@ -471,6 +474,7 @@ class KFlodCrossExecuter(Executer):
 
             y_pred = clf.predict(x_test)
             mtc = Metrics(y_test, y_pred)
+            times.append([clf.get_training_time(), clf.get_testing_time()])
             mtcs.append(mtc)
 
         # real train & test
@@ -483,15 +487,17 @@ class KFlodCrossExecuter(Executer):
         mtc = Metrics(self.y_test, y_pred)  # 构建测试器
         mtcs.append(mtc)
         print(f'Testing {name} Cost: {clf.get_testing_time():.4f} s')
+        times.append([clf.get_training_time(), clf.get_testing_time()])
 
-        return mtcs, clf  # 返回所有测试器和分类器
+        return mtcs, clf, times  # 返回所有测试器和分类器和验证时间
 
-    def logline(self, name, mtcs: list, clf):
+    def logline(self, name, mtcs: list, clf, times):
         '''
         将某次实验的结果写入日志df。
         '''
 
         test_mtc = mtcs.pop()
+        test_times = times.pop()
 
         def getline(mtc):
             func_list = []
@@ -502,11 +508,11 @@ class KFlodCrossExecuter(Executer):
                 else:
                     raise ValueError(f'{metric} is not in Metric.')
 
-            return [func() for func in func_list] + [clf.get_training_time(), clf.get_testing_time()]
+            return [func() for func in func_list]
 
-        self.test.loc[len(self.test)] = [name] + getline(test_mtc)  # 获取测试的结果
+        self.test.loc[len(self.test)] = [name] + getline(test_mtc) + test_times  # 获取测试的结果
 
-        valid_rows = [getline(mtc) for mtc in mtcs]
+        valid_rows = [getline(mtc) + times[ix] for ix, mtc in enumerate(mtcs)]
         valids_array = jnp.array(valid_rows)
 
         mean_vals = jnp.mean(valids_array, axis=0).tolist()
@@ -612,9 +618,9 @@ class KFlodCrossExecuter(Executer):
         '''
 
         for name, clf in self.clf_dict.items():
-            mtc, clf = self.execute(name, clf)
+            mtc, clf, times = self.execute(name, clf)
 
-            self.logline(name, mtc, clf)
+            self.logline(name, mtc, clf, times)
 
         self.format_print(sort_by, ascending, precision, time)
 
@@ -767,8 +773,13 @@ class BootstrapExecuter(Executer):
 
         return mtcs, clf
 
-    def logline(self, name, mtcs: list, clf):
+    def logline(self, name, mtcs: list, clf, times):
+        '''
+        将某次实验的结果写入日志df。
+        '''
+
         test_mtc = mtcs.pop()
+        test_times = times.pop()
 
         def getline(mtc):
             func_list = []
@@ -779,11 +790,11 @@ class BootstrapExecuter(Executer):
                 else:
                     raise ValueError(f'{metric} is not in Metric.')
 
-            return [func() for func in func_list] + [clf.get_training_time(), clf.get_testing_time()]
+            return [func() for func in func_list]
 
-        self.df.loc[len(self.df)] = [name] + getline(test_mtc)
+        self.test.loc[len(self.test)] = [name] + getline(test_mtc) + test_times  # 获取测试的结果
 
-        valid_rows = [getline(mtc) for mtc in mtcs]
+        valid_rows = [getline(mtc) + times[ix] for ix, mtc in enumerate(mtcs)]
         valids_array = jnp.array(valid_rows)
 
         mean_vals = jnp.mean(valids_array, axis=0).tolist()
@@ -890,8 +901,8 @@ class BootstrapExecuter(Executer):
         '''
 
         for name, clf in self.clf_dict.items():
-            mtc, clf = self.execute(name, clf)
+            mtc, clf, times = self.execute(name, clf)
 
-            self.logline(name, mtc, clf)
+            self.logline(name, mtc, clf, times)
 
         self.format_print(sort_by, ascending, precision, time)
