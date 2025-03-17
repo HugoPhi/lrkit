@@ -1,6 +1,6 @@
 # Learn Kit
 
-This is a task-oriented test frame work for learning algorithms. We provide two API version: numpy & jax. You can import them as submodules. For example, if you want to use `jax` version:  
+This is a task-oriented test frame work for learning algorithms. We provide two API version: `numpy` & `jax`. You can import them as submodules. For example, if you want to use `jax` version:  
 
 ```bash
 git submodule add -b jax https://github.com/tibless/lrkit.git ./plugins/lrkit
