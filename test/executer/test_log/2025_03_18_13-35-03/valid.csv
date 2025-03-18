@@ -1,0 +1,3 @@
+model,accuracy_mean,accuracy_std,macro_f1_mean,macro_f1_std,micro_f1_mean,micro_f1_std,avg_recall_mean,avg_recall_std,training time_mean,training time_std,testing time_mean,testing time_std
+clf1,0.43,0.15362291495737215,,,,,0.5,0.0,0.400193977355957,2.3465233589298627e-05,4.448890686035156e-05,1.0117041748333618e-05
+clf2,0.43,0.15362291495737215,,,,,0.5,0.0,0.40019655227661133,6.763376627051378e-05,3.77655029296875e-05,4.743511243990284e-06

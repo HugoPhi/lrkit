@@ -22,7 +22,7 @@ class Metrics:
     ```
     '''
 
-    def __init__(self, y, y_pred, proba=True):
+    def __init__(self, y, y_pred, classes=None):
         '''
         初始化。
 
@@ -36,23 +36,38 @@ class Metrics:
             输入是否为概率向量。
         '''
 
-        self.proba = proba
         self.y = y
         self.y_pred = y_pred
-        uni = np.unique(self.y)
-        if uni[0] != 0:
-            raise ValueError('y must start from 0')
 
-        self.classes = uni.shape[0]  # get classes num
+        if classes is not None:
+            self.classes = classes
+        else:
+            uni = np.unique(self.y)
+            self.classes = uni.shape[0]  # get classes num
 
         self.matrix = np.zeros((self.classes, self.classes))  # get confusion matrix
 
-        if self.proba:
-            for i, j in zip(y, np.argmax(y_pred, axis=1)):
-                self.matrix[i, j] += 1
+        if len(self.y.shape) == 1:
+            temp_y = self.y
+        elif len(self.y.shape) == 2:
+            temp_y = np.argmax(self.y, axis=1)
         else:
-            for i, j in zip(y, y_pred):
-                self.matrix[i, j] += 1
+            raise ValueError('Input y must be 1D or 2D.')
+
+        if len(self.y_pred.shape) == 1:
+            temp_y_pred = self.y_pred
+        if len(self.y_pred.shape) == 2:
+            temp_y_pred = np.argmax(self.y_pred, axis=1)
+        elif len(self.y_pred.shape) > 2:
+            raise ValueError('Input y_pred must be 1D or 2D.')
+
+        if len(self.y.shape) == 2 and len(self.y_pred.shape) == 2:
+            self.proba = True
+        else:
+            self.proba = False
+
+        for i, j in zip(temp_y, temp_y_pred):
+            self.matrix[i, j] += 1
 
     def precision(self):
         '''
@@ -123,7 +138,7 @@ class Metrics:
         '''
 
         if not self.proba:
-            raise ValueError('roc() can only be called when proba == True')
+            raise ValueError('roc() can only be called when y & y_pred are proba matrix')
 
         def calculate_tpr_fpr(y_true, y_pred):
             tp = np.sum((y_pred == 1) & (y_true == 1))
@@ -164,7 +179,7 @@ class Metrics:
         '''
 
         if not self.proba:
-            raise ValueError('auc() can only be called when proba == True')
+            raise ValueError('auc() can only be called when y & y_pred are proba matrix')
 
         rocs = self.roc()
         aucs = []
@@ -189,7 +204,7 @@ class Metrics:
         '''
 
         if not self.proba:
-            raise ValueError('ap() can only be called when proba == True')
+            raise ValueError('ap() can only be called when y & y_pred are proba matrix')
 
         def calculate_prec_rec(y_true, y_pred):
             tp = np.sum((y_pred == 1) & (y_true == 1))
@@ -230,7 +245,7 @@ class Metrics:
         '''
 
         if not self.proba:
-            raise ValueError('avg_ap() can only be called when proba == True')
+            raise ValueError('avg_ap() can only be called when y & y_pred are proba matrix')
 
         return self.ap().mean()
 

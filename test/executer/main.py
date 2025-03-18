@@ -86,6 +86,7 @@ def test_leave_one_cross_executer():
         clf_dict=clf_dict,
         metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
         log=True,
+        n_class=2,
         log_dir='./test_log/'
     )
     executer.run_all()
