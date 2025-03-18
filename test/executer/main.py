@@ -39,78 +39,83 @@ clf_dict = {
     'clf2': SimpleClassifier(),
 }
 
+open_list = [
+    True,
+    True,
+    True,
+    True,
+    True,
+]
+
 
 # 测试 Executer 类
-def test_executer():
-    executer = Executer(
-        X_train, y_train, X_test, y_test,
-        clf_dict=clf_dict,
-        metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
-        log=True,
-        log_dir='./test_log/'
-    )
-    executer.run_all()
-    print("Executer test passed.")
+if open_list[0]:
+    def test_executer():
+        executer = Executer(
+            X_train, y_train, X_test, y_test,
+            clf_dict=clf_dict,
+            metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
+            log=True,
+            log_dir='./test_log/'
+        )
+        executer.run_all()
+        print("Executer test passed.")
 
 
 # 测试 NonValidExecuter 类
-def test_non_valid_executer():
-    executer = NonValidExecuter(
-        X_train, y_train, X_test, y_test,
-        clf_dict=clf_dict,
-        metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
-        log=True,
-        log_dir='./test_log/'
-    )
-    executer.run_all()
-    print("NonValidExecuter test passed.")
+if open_list[1]:
+    def test_non_valid_executer():
+        executer = NonValidExecuter(
+            X_train, y_train, X_test, y_test,
+            clf_dict=clf_dict,
+            metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
+            log=True,
+            log_dir='./test_log/'
+        )
+        executer.run_all()
+        print("NonValidExecuter test passed.")
 
 
 # 测试 KFlodCrossExecuter 类
-def test_kfold_cross_executer():
-    executer = KFlodCrossExecuter(
-        X_train, y_train, X_test, y_test,
-        clf_dict=clf_dict,
-        metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
-        k=5,
-        log=True,
-        log_dir='./test_log/'
-    )
-    executer.run_all()
-    print("KFlodCrossExecuter test passed.")
+if open_list[2]:
+    def test_kfold_cross_executer():
+        executer = KFlodCrossExecuter(
+            X_train, y_train, X_test, y_test,
+            clf_dict=clf_dict,
+            metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
+            k=5,
+            log=True,
+            log_dir='./test_log/'
+        )
+        executer.run_all()
+        print("KFlodCrossExecuter test passed.")
 
 
 # 测试 LeaveOneCrossExecuter 类
-def test_leave_one_cross_executer():
-    executer = LeaveOneCrossExecuter(
-        X_train, y_train, X_test, y_test,
-        clf_dict=clf_dict,
-        metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
-        log=True,
-        log_dir='./test_log/'
-    )
-    executer.run_all()
-    print("LeaveOneCrossExecuter test passed.")
+if open_list[3]:
+    def test_leave_one_cross_executer():
+        executer = LeaveOneCrossExecuter(
+            X_train, y_train, X_test, y_test,
+            clf_dict=clf_dict,
+            metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
+            log=True,
+            n_class=2,
+            log_dir='./test_log/'
+        )
+        executer.run_all()
+        print("LeaveOneCrossExecuter test passed.")
 
 
 # 测试 BootstrapExecuter 类
-def test_bootstrap_executer():
-    executer = BootstrapExecuter(
-        X_train, y_train, X_test, y_test,
-        clf_dict=clf_dict,
-        metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
-        n_bootstraps=10,
-        log=True,
-        log_dir='./test_log/'
-    )
-    executer.run_all()
-    print("BootstrapExecuter test passed.")
-
-
-# 运行所有测试
-if __name__ == "__main__":
-    test_executer()
-    test_non_valid_executer()
-    test_kfold_cross_executer()
-    test_leave_one_cross_executer()
-    test_bootstrap_executer()
+if open_list[4]:
+    def test_bootstrap_executer():
+        executer = BootstrapExecuter(
+            X_train, y_train, X_test, y_test,
+            clf_dict=clf_dict,
+            metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
+            n_bootstraps=10,
+            log=True,
+            log_dir='./test_log/'
+        )
+        executer.run_all()
+        print("BootstrapExecuter test passed.")

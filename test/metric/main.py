@@ -40,7 +40,7 @@ def test_compare_with_sklearn():
     y_pred_labels = jnp.argmax(y_pred, axis=1)
 
     # 初始化 Metrics 对象
-    metrics = Metrics(y_true, y_pred, proba=True)
+    metrics = Metrics(y_true, y_pred)
 
     # ----------------- 验证基础指标 -----------------
     # 准确率
@@ -94,10 +94,10 @@ def test_edge_cases():
         [0.8, 0.2, 0.0],
         [0.2, 0.7, 0.1],
     ])
-    metrics = Metrics(y_true, y_pred, proba=True)
+    metrics = Metrics(y_true, y_pred)
     assert jnp.allclose(metrics.accuracy(), 1.0)
 
     # 全错误预测
     y_pred_wrong = jnp.roll(y_pred, shift=1, axis=1)  # 错位预测
-    metrics_wrong = Metrics(y_true, y_pred_wrong, proba=True)
+    metrics_wrong = Metrics(y_true, y_pred_wrong)
     assert jnp.allclose(metrics_wrong.accuracy(), 0.0)
