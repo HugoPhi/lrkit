@@ -89,7 +89,6 @@ class Metrics:
         classes : int, optional
             The number of classes. If None, the number of unique labels in `y` will be used.
         '''
-        self.y
 
         self.y = y
         self.y_pred = y_pred
