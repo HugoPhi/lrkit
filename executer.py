@@ -1,109 +1,170 @@
-import atexit
-from datetime import datetime
-import toml
+"""
+Experiment Executor Module
+
+This module defines the base functionality for managing and executing machine learning experiments.
+It handles the training, testing, logging, and evaluation of classifiers across multiple experiments.
+The module also supports different validation techniques (e.g., K-fold, Leave-One-Out, Bootstrap) and
+provides a flexible framework for experiment tracking and result analysis.
+
+Key Components:
+---------------
+- Executer: The base class for managing training and testing workflows.
+- NonValidExecuter: A subclass that skips validation during the experiment.
+- KFlodCrossExecuter: A subclass that uses K-fold cross-validation for validation.
+- LeaveOneCrossExecuter: A subclass that uses Leave-One-Out Cross-Validation for validation.
+- BootstrapExecuter: A subclass that uses Bootstrap resampling for validation.
+- Log management: Supports logging of experiment parameters, results, and execution time.
+
+Common Workflow:
+----------------
+1. Initialize the desired executor class (e.g., KFlodCrossExecuter, BootstrapExecuter).
+2. Define the classifier models in `clf_dict` and specify evaluation metrics.
+3. Run experiments using methods like `run_all()` or `step()`.
+4. Access experiment results through the `get_result()` method.
+
+Example Usage:
+--------------
+1. K-Fold Cross-Validation Example:
+    executer = KFlodCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, k=10, log=True)
+    executer.run_all()
+
+2. Bootstrap Resampling Example:
+    executer = BootstrapExecuter(X_train, y_train, X_test, y_test, clf_dict, n_bootstraps=100, log=True)
+    executer.run_all()
+
+3. Leave-One-Out Cross-Validation Example:
+    executer = LeaveOneCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, n_class=3, log=True)
+    executer.run_all()
+
+Attributes:
+-----------
+- X_train, y_train, X_test, y_test: Training and testing data used for model evaluation.
+- clf_dict: A dictionary of classifier models, where each key is the experiment name and value is the classifier.
+- metric_list: A list of evaluation metrics (e.g., accuracy, F1-score) for model evaluation.
+- log_dir: Directory to store log files with experiment parameters and results.
+"""
+
 import os
+import atexit
 import traceback
-from tabulate import tabulate
+from datetime import datetime
+
+import toml
 import pandas as pd
-import jax.numpy as jnp
 from jax import random
+import jax.numpy as jnp
+from tabulate import tabulate
 
 from .metric import Metrics
 
 
 def combine_mean_std(df, precision=4):
     """
-    by DeepSeek.
-    合并 _mean 和 _std 列，格式为 mean ± std，并限制浮点数的精度。
+    Merges the '_mean' and '_std' columns of a DataFrame into a single column
+    with the format 'mean ± std' and limits the precision of the floating-point numbers.
 
-    参数:
-        df (pd.DataFrame): 包含 _mean 和 _std 列的 DataFrame。
-        precision (int): 浮点数的精度（小数位数），默认为 4。
+    This function is particularly useful when you want to represent the mean
+    and standard deviation together in a more readable format for reporting purposes.
 
-    返回:
-        pd.DataFrame: 合并后的 DataFrame。
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing columns that end with '_mean' and '_std'.
+    precision : int, optional
+        The precision of the floating-point numbers, by default 4.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame with combined 'mean ± std' columns and rounded to the specified precision.
+
+    Examples
+    --------
+    Given a DataFrame:
+    ```
+    df = pd.DataFrame({
+        'model': ['Model1', 'Model2'],
+        'accuracy_mean': [0.95, 0.92],
+        'accuracy_std': [0.01, 0.02]
+    })
+    ```
+    The function will return:
+    ```
+    model    accuracy
+    0  Model1   0.9500 ± 0.0100
+    1  Model2   0.9200 ± 0.0200
+    ```
     """
-    # 获取所有包含 _mean 和 _std 的列
+
     mean_cols = [col for col in df.columns if col.endswith('_mean')]
     std_cols = [col for col in df.columns if col.endswith('_std')]
 
-    # 创建一个新的 DataFrame 来存储合并后的结果
     combined_df = pd.DataFrame()
 
-    # 合并 mean 和 std 列
     for mean_col, std_col in zip(mean_cols, std_cols):
-        # 提取指标名称（去掉 _mean 和 _std）
         metric_name = mean_col.replace('_mean', '')
 
-        # 合并 mean 和 std 列，并限制浮点数精度
         combined_df[metric_name] = (
             df[mean_col].round(precision).astype(str) + " ± " + df[std_col].round(precision).astype(str)
         )
 
-    # 添加 model 列
     combined_df['model'] = df['model']
 
-    # 重新排列列顺序，确保 model 在第一列
     combined_df = combined_df[['model'] + [col for col in combined_df.columns if col != 'model']]
 
     return combined_df
 
 
 class Executer:
-    '''
-    执行器基类，只进行训练和测试。
-    ==========
-      - 快捷管理训练，测试，日志全过程，并灵活调试Classifier数组里面的各个模型。
-      - 开启Log，支持中途运行出错，结果不丢失。
-      - 在使用的时候根据需要重写execute(self)方法。
+    """
+    Base class for executing training and testing experiments.
+    ========================================================
+    This class provides convenient methods for managing training, testing,
+    and logging throughout the entire experiment process. It is designed to be
+    flexible so you can easily modify the execution flow for different models
+    by overriding the `execute()` method.
 
     Parameters
     ----------
     X_train : jnp.ndarray
-        训练集的X。
+        Feature matrix for the training data.
     y_train : jnp.ndarray
-        训练集的y。
+        Labels for the training data.
     X_test : jnp.ndarray
-        测试集的X。
+        Feature matrix for the test data.
     y_test : jnp.ndarray
-        测试集的y。
+        Labels for the test data.
     clf_dict : dict
-        Clf字典。包含多个实验的{name : Clf}
+        Dictionary containing classifiers with their corresponding names.
     metric_list : list
-        测评指标列表。在两端分别加上name和time之后，作为结果表格的表头。
+        List of metrics to be evaluated, e.g., ['accuracy', 'macro_f1', 'micro_f1'].
     log : bool
-        是否开启日志。开启之后会将过程参数写入到对应文件夹的hyper.toml，将测试结果写入到同一文件夹的test.csv。
+        If True, logs will be created and saved in the specified directory.
     log_dir : str
-        存放日志的文件夹。日志会被放到一个日期为名字的子文件夹里面。
-    '''
+        Directory where logs will be stored. Each experiment run will be saved
+        in a subdirectory named with the current date and time.
+
+    Example
+    -------
+    # Example usage:
+    executer = Executer(X_train, y_train, X_test, y_test, clf_dict, metric_list)
+    executer.run_all()
+    """
 
     def __init__(self, X_train, y_train, X_test, y_test,
                  clf_dict: dict,
                  metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
                  log=False,
                  log_dir='./log/'):
-        '''
-        初始化。
+        """
+        Initializes the Executer class with necessary data and settings.
 
-        Parameters
-        ----------
-        X_train : jnp.ndarray
-            训练集的X。
-        y_train : jnp.ndarray
-            训练集的y。
-        X_test : jnp.ndarray
-            测试集的X。
-        y_test : jnp.ndarray
-            测试集的y。
-        clf_dict : dict
-            Clf字典。包含多个实验的{name : Clf}
-        metric_list : list
-            测评指标列表。在两端分别加上name和time之后，作为结果表格的表头。
-        log : bool
-            是否开启日志。开启之后会将过程参数写入到对应文件夹的hyper.toml，将结果写入到同一文件夹的result.csv。
-        log_dir : str
-            存放日志的文件夹。日志会被放到一个日期为名字的子文件夹里面。
-        '''
+        Parameters are the same as those described in the class-level docstring.
+
+        Example
+        -------
+        executer = Executer(X_train, y_train, X_test, y_test, clf_dict)
+        """
 
         self.X_train = X_train
         self.y_train = y_train
@@ -113,7 +174,7 @@ class Executer:
         self.metric_list = metric_list
         self.log = log
 
-        self.df = pd.DataFrame(columns=['model'] + self.metric_list + ['training time'] + ['testing time'])
+        self.test = pd.DataFrame(columns=['model'] + self.metric_list + ['training time'] + ['testing time'])
 
         # log
         if log:
@@ -133,52 +194,48 @@ class Executer:
             atexit.register(self.save_df)  # 保证退出的时候能保存已经生成的df
 
     def save_df(self):
-        '''
-        保存df到日志
-        '''
-        self.df.to_csv(os.path.join(self.log_path, 'result.csv'), index=False)
+        """
+        Save the experiment results (DataFrame) to a CSV file in the log directory.
+
+        Example:
+        After running experiments, the DataFrame with all results is saved to
+        'result.csv' in the appropriate log folder.
+        """
+
+        self.test.to_csv(os.path.join(self.log_path, 'result.csv'), index=False)
 
     def execute(self, name, clf):
-        '''
-        执行实验。
-
-        Notes
-        -----
-          - 这里必须返回一个测试器和一个训练好的分类器，因为写入日志要用。
+        """
+        Run a single experiment.
 
         Parameters
         ----------
         name : str
-            实验的名字。
+            The name of the experiment.
         clf : Clfs
-            实验获取的分类器，继承自接口Clfs。
+            The classifier object to train and test.
 
         Returns
         -------
         clf : Clfs
-            训练好的分类器。
-        metric: Metrics
-            有记录的Metric实例。
+            The trained classifier.
+        metric : Metrics
+            A Metrics instance containing the evaluation results.
 
-        Examples
-        --------
-
-        可以这么重写：
+        Example:
+        To override the `execute` method, use the following structure:
         ```python
         class MyExecuter(Executer):
             def execute(self, name, clf):
-                print(f'>> {name}')
-
+                print(f'Running {name}')
                 clf.fit(self.X_train, self.y_train)
-                print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
-
+                print(f'Train {name} Cost: {clf.get_training_time()} seconds')
                 y_pred = clf.predict(self.X_test)
-
-                mtc = Metrics(self.y_test, y_pred)
-
-                return mtc, clf
+                metrics = Metrics(self.y_test, y_pred)
+                return metrics, clf
         ```
-        '''
+        """
+
         print(f'>> {name}')
 
         clf.fit(self.X_train, self.y_train)  # 训练分类器
@@ -194,9 +251,23 @@ class Executer:
         return mtc, clf, time  # 返回测试器和分类器
 
     def logline(self, name, mtc, clf, time):
-        '''
-        将某次实验的结果写入日志df。
-        '''
+        """
+        Log the results of a single experiment into the DataFrame.
+
+        Parameters
+        ----------
+        name : str
+            The name of the experiment.
+        metrics : Metrics
+            The metrics object containing evaluation metrics.
+        clf : Clfs
+            The classifier object.
+        time : list
+            The list containing training and testing times.
+
+        Example:
+        After an experiment, the result is logged into the DataFrame for future analysis.
+        """
 
         func_list = []
         for metric in self.metric_list:
@@ -206,17 +277,21 @@ class Executer:
             else:
                 raise ValueError(f'{metric} is not in Metric.')
 
-        self.df.loc[len(self.df)] = [name] + [func() for func in func_list] + time
+        self.test.loc[len(self.test)] = [name] + [func() for func in func_list] + time
 
     def run(self, key):
-        '''
-        运行单个实验。不会消耗clf_dict。同时会写入日志。
+        """
+        Run a single experiment and log the results without consumption clf in clf_dict.
 
         Parameters
         ----------
         key : str
-            实验的名字。
-        '''
+            The name of the experiment.
+
+        Example:
+        executer.run('experiment_name')  # Runs the specified experiment
+        """
+
         if key in self.clf_dict.keys():
             mtc, clf, time = self.execute(key, self.clf_dict[key])
 
@@ -225,16 +300,21 @@ class Executer:
             raise KeyError(f'{key} is not in clf_dict')
 
     def step(self):
-        '''
-        迭代运行实验。采用迭代器模式。会逐个消耗实验，直到clf_dict为空。过程中会返回对应的名字和Clf对象，如果是最后一个，返回None。同时会写入日志。
+        """
+        Run experiments iteratively until all classifiers have been processed. This will consume clf in clf_dict until it is empty.
 
         Returns
         -------
         name : str
-            实验的名字。
+            The name of the experiment.
         clf : Clfs
-            实验获取的分类器，继承自接口Clfs。
-        '''
+            The classifier object for the experiment.
+
+        Example:
+        for name, clf in executer.step():
+            print(f'Running {name} using classifier {clf}')
+        """
+
         if len(self.clf_dict) == 0:
             return None
 
@@ -251,27 +331,30 @@ class Executer:
             traceback.print_exc()
 
     def format_print(self, sort_by='accuracy', ascending=False, precision=4, time=False):
-        '''
-        表格的格式化输出。
+        """
+        Format and print the results as a table.
 
         Parameters
         ----------
         sort_by : str
-            按照哪个指标进行排序。比如：'accuracy'，表示测试集按照accuracy指标进行排序。
+            Metric to sort by, e.g., 'accuracy'.
         ascending : bool
-            是否升序。
+            Whether to sort in ascending order.
         precision : int
-            保留几位小数。
-        time: bool
-            是否显示训练和测试时间。
-        '''
+            The number of decimal places to display.
+        time : bool
+            Whether to display training and testing time.
+
+        Example:
+        executer.format_print(sort_by='accuracy', ascending=True)
+        """
 
         if sort_by is not None:
             print(f'\n>> Test Result, sort by \'{sort_by}\'.')
             if not time:
-                temp_table = self.df.sort_values(sort_by, ascending=ascending).drop(columns=['training time', 'testing time'])
+                temp_table = self.test.sort_values(sort_by, ascending=ascending).drop(columns=['training time', 'testing time'])
             else:
-                temp_table = self.df.sort_values(sort_by, ascending=ascending)
+                temp_table = self.test.sort_values(sort_by, ascending=ascending)
 
             print(tabulate(
                 temp_table,
@@ -284,9 +367,9 @@ class Executer:
         else:
             print('\n>> Test Result.')
             if not time:
-                temp_table = self.df.drop(columns=['training time', 'testing time'])
+                temp_table = self.test.drop(columns=['training time', 'testing time'])
             else:
-                temp_table = self.df
+                temp_table = self.test
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -296,20 +379,23 @@ class Executer:
             ))
 
     def run_all(self, sort_by=None, ascending=False, precision=4, time=False):
-        '''
-        运行所有实验。
+        """
+        Run all experiments and log the results.
 
         Parameters
         ----------
-        sort_by : str
-            按照哪个指标进行排序。比如：'accuracy'，表示测试集按照accuracy指标进行排序。
+        sort_by : str, optional
+            Metric to sort by, e.g., 'accuracy'.
         ascending : bool
-            是否升序。
+            Whether to sort in ascending order.
         precision : int
-            保留几位小数。
-        time: bool
-            是否显示训练和测试时间。
-        '''
+            The number of decimal places to display.
+        time : bool
+            Whether to display training and testing time.
+
+        Example:
+        executer.run_all(sort_by='accuracy', ascending=False)
+        """
 
         for name, clf in self.clf_dict.items():
             mtc, clf, time = self.execute(name, clf)
@@ -319,83 +405,128 @@ class Executer:
         self.format_print(sort_by, ascending, precision, time)
 
     def get_result(self):
-        '''
-        返回实验结果对应的表格。
+        """
+        Return the experiment results as a DataFrame.
 
         Returns
         -------
-        self.pd : pd.DataFrame
-        '''
-        return self.df
+        pd.DataFrame
+            DataFrame containing the experiment results.
+
+        Example:
+        test = executer.get_result()  # Get the result DataFrame
+        """
+
+        return self.test
 
 
 class NonValidExecuter(Executer):
-    '''
-    不进行Validation的执行器，只进行训练和测试。
-    ==========
-      - 快捷管理训练，测试，日志全过程，并灵活调试Classifier数组里面的各个模型。
-      - 开启Log，支持中途运行出错，结果不丢失。
-      - 在使用的时候根据需要重写execute(self)方法。
+    """
+    Executor class for training and testing without validation.
+    ========================================================
+    This class extends the base `Executer` class and is designed to manage the entire
+    training, testing, and logging process without performing validation. It allows
+    for easy management of experiments with classifiers and metrics, and it supports
+    logging, ensuring that experiment results are saved even if errors occur during execution.
 
-    Parameters
+    Key Features:
+    -------------
+    - Manages the entire lifecycle of training, testing, and logging.
+    - Enables flexible adjustments to classifier models within the `clf_dict` array.
+    - Supports logging, saving parameters and results into the specified directory.
+    - You can override the `execute(self)` method as needed for different classifier behaviors.
+
+    Parameters:
     ----------
     X_train : jnp.ndarray
-        训练集的X。
+        Feature matrix for the training data.
     y_train : jnp.ndarray
-        训练集的y。
+        Labels for the training data.
     X_test : jnp.ndarray
-        测试集的X。
+        Feature matrix for the test data.
     y_test : jnp.ndarray
-        测试集的y。
+        Labels for the test data.
     clf_dict : dict
-        Clf字典。包含多个实验的{name : Clf}
-    metric_list : list
-        测评指标列表。在两端分别加上name和time之后，作为结果表格的表头。
-    log : bool
-        是否开启日志。开启之后会将过程参数写入到对应文件夹的hyper.toml，将测试结果写入到同一文件夹的test.csv。
-    log_dir : str
-        存放日志的文件夹。日志会被放到一个日期为名字的子文件夹里面。
-    '''
+        A dictionary of classifiers where each key is an experiment name and each value is the classifier instance.
+    metric_list : list, optional
+        A list of evaluation metrics, such as ['accuracy', 'macro_f1', 'micro_f1', 'avg_recall']. Default is `['accuracy', 'macro_f1', 'micro_f1', 'avg_recall']`.
+    log : bool, optional
+        If True, enables logging of hyperparameters and results. The logs will be saved in the `log_dir` directory. Default is False.
+    log_dir : str, optional
+        Directory where logs will be saved. If logging is enabled, logs will be saved in a subfolder named with the current timestamp. Default is `'./log/'`.
+
+    Example:
+    --------
+    # Example usage for running an experiment without validation:
+    executer = NonValidExecuter(X_train, y_train, X_test, y_test, clf_dict, log=True)
+    executer.run_all()
+    """
 
     def __init__(self, X_train, y_train, X_test, y_test,
                  clf_dict: dict,
                  metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
                  log=False,
                  log_dir='./log/'):
+        """
+        Initializes the NonValidExecuter class for training and testing without validation.
+
+        This constructor calls the parent `Executer` class and initializes necessary
+        parameters like the training data, testing data, classifiers, and logging options.
+
+        Parameters are the same as described in the class-level docstring.
+
+        Example:
+        --------
+        executer = NonValidExecuter(X_train, y_train, X_test, y_test, clf_dict)
+        """
 
         super(NonValidExecuter, self).__init__(X_train, y_train, X_test, y_test,
                                                clf_dict=clf_dict, metric_list=metric_list, log=log, log_dir=log_dir)
 
 
 class KFlodCrossExecuter(Executer):
-    '''
-    使用K折交叉验证作为Validation的执行器。
-    ==========
-      - 快捷管理训练，测试，日志全过程，并灵活调试Classifier数组里面的各个模型。
-      - 开启Log，支持中途运行出错，结果不丢失。
-      - 在使用的时候根据需要重写execute(self)方法。
+    """
+    Executor class using K-fold cross-validation for model validation.
+    =================================================================
+    This class extends the `Executer` base class and integrates K-fold cross-validation
+    to assess classifier performance. It manages the entire training, validation, testing,
+    and logging process, allowing flexibility in experiment execution.
 
-    Parameters
+    Key Features:
+    -------------
+    - Simplifies the management of training, testing, and logging workflows.
+    - Supports K-fold cross-validation for more robust evaluation.
+    - Allows for model adjustments within the `clf_dict` array for various experiments.
+    - Logs results, ensuring data persistence even if errors occur during execution.
+    - You can override the `execute(self)` method to customize behavior for different classifiers.
+
+    Parameters:
     ----------
     X_train : jnp.ndarray
-        训练集的X。
+        Feature matrix for the training data.
     y_train : jnp.ndarray
-        训练集的y。
+        Labels for the training data.
     X_test : jnp.ndarray
-        测试集的X。
+        Feature matrix for the test data.
     y_test : jnp.ndarray
-        测试集的y。
+        Labels for the test data.
     clf_dict : dict
-        Clf字典。包含多个实验的{name : Clf}
-    metric_list : list
-        测评指标列表。在两端分别加上name和time之后，作为结果表格的表头。
-    k : int
-        K折验证的k的大小，k >= 1 。
-    log : bool
-        是否开启日志。开启之后会将过程参数写入到对应文件夹的hyper.toml，将测试结果写入到同一文件夹的test.csv，将Validation结果写入到同一文件夹的valid.csv。
-    log_dir : str
-        存放日志的文件夹。日志会被放到一个日期为名字的子文件夹里面。
-    '''
+        Dictionary containing classifier models, where each key is an experiment name and the value is the classifier.
+    metric_list : list, optional
+        List of evaluation metrics (e.g., ['accuracy', 'macro_f1', 'micro_f1']). Default is `['accuracy', 'macro_f1', 'micro_f1', 'avg_recall']`.
+    k : int, optional
+        The number of folds in cross-validation (k >= 1). Default is 10.
+    log : bool, optional
+        If True, logging is enabled and results are saved in `log_dir`. Default is False.
+    log_dir : str, optional
+        Directory where logs will be stored. Default is './log/'.
+
+    Example:
+    --------
+    # Example usage for running K-fold cross-validation experiments:
+    executer = KFlodCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, k=5, log=True)
+    executer.run_all()
+    """
 
     def __init__(self, X_train, y_train, X_test, y_test,
                  clf_dict: dict,
@@ -403,6 +534,28 @@ class KFlodCrossExecuter(Executer):
                  k=10,
                  log=False,
                  log_dir='./log/'):
+        """
+        Initializes the KFlodCrossExecuter with the necessary data and settings.
+
+        Parameters:
+        -----------
+        X_train, y_train, X_test, y_test : jnp.ndarray
+            Training and testing data features and labels.
+        clf_dict : dict
+            Dictionary containing classifier models for experimentation.
+        metric_list : list, optional
+            List of evaluation metrics for performance measurement. Default includes ['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'].
+        k : int, optional
+            The number of folds for cross-validation (k >= 1). Default is 10.
+        log : bool, optional
+            Whether to enable logging. Default is False.
+        log_dir : str, optional
+            Directory where logs are saved. Default is './log/'.
+
+        Example:
+        --------
+        executer = KFlodCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, k=5, log=True)
+        """
 
         super(KFlodCrossExecuter, self).__init__(X_train, y_train, X_test, y_test,
                                                  clf_dict, metric_list, log, log_dir)
@@ -417,46 +570,37 @@ class KFlodCrossExecuter(Executer):
         self.valid = pd.DataFrame(columns=['model'] + [f'{x}_{suffix}' for x in metrics for suffix in ['mean', 'std']])
 
     def execute(self, name, clf):
-        '''
-        执行实验，不记录日志。
+        """
+        Executes an experiment using K-fold cross-validation and returns evaluation metrics.
 
-        Notes
-        -----
-          - 这里必须返回一个测试器和一个训练好的分类器，因为写入日志要用。
-
-        Parameters
+        Parameters:
         ----------
         name : str
-            实验的名字。
+            Name of the experiment.
         clf : Clfs
-            实验获取的分类器，继承自接口Clfs。
+            Classifier model used for the experiment.
 
-        Returns
+        Returns:
         -------
         clf : Clfs
-            训练好的分类器。
-        metric: Metrics
-            有记录的Metric实例。
+            Trained classifier model.
+        metric : Metrics
+            Recorded metrics for the experiment.
 
-        Examples
+        Example:
         --------
-
-        可以这么重写：
+        You can override this method for custom behavior like so:
         ```python
-        class MyExcuter(Excuter):
+        class MyExecuter(KFlodCrossExecuter):
             def execute(self, name, clf):
-                print(f'>> {name}')
-
+                print(f'Running {name}')
                 clf.fit(self.X_train, self.y_train)
-                print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
-
                 y_pred = clf.predict(self.X_test)
-
-                mtc = Metrics(self.y_test, y_pred)
-
-                return mtc, clf
+                metrics = Metrics(self.y_test, y_pred)
+                return metrics, clf
         ```
-        '''
+        """
+
         print(f'>> {name}')
 
         # k折交叉验证
@@ -492,9 +636,24 @@ class KFlodCrossExecuter(Executer):
         return mtcs, clf, times  # 返回所有测试器和分类器和验证时间
 
     def logline(self, name, mtcs: list, clf, times):
-        '''
-        将某次实验的结果写入日志df。
-        '''
+        """
+        Logs the results of an experiment into the DataFrame for both testing and validation.
+
+        Parameters:
+        ----------
+        name : str
+            Name of the experiment.
+        mtcs : list
+            List of recorded metrics from K-fold validation and final testing.
+        clf : Clfs
+            Classifier used in the experiment.
+        times : list
+            List containing training and testing times.
+
+        Example:
+        --------
+        After an experiment, this method stores the results into the DataFrame for later analysis.
+        """
 
         test_mtc = mtcs.pop()
         test_times = times.pop()
@@ -526,23 +685,36 @@ class KFlodCrossExecuter(Executer):
         self.valid.loc[len(self.valid)] = [name] + valid_result
 
     def save_df(self):
-        '''
-        保存df到日志
-        '''
+        """
+        Saves the results DataFrame to CSV files in the log directory.
+
+        Example:
+        --------
+        This method is invoked to save both test and validation results after all experiments.
+        """
+
         self.test.to_csv(os.path.join(self.log_path, 'test.csv'), index=False)
         self.valid.to_csv(os.path.join(self.log_path, 'valid.csv'), index=False)
 
     def format_print(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False, precision=4, time=False):
-        '''
-        表格的格式化输出。
+        """
+        Formats and prints the results as a table, with optional sorting and time display.
 
-        Parameters
+        Parameters:
         ----------
-        sort_by : str
-            按照哪个指标进行排序。接受两个位置，分别是测试和验证的指标。比如：('accuracy', 'accuracy_mean')，表示测试集按照accuracy指标进行排序，验证集按照accuracy_mean指标进行排序。
+        sort_by : tuple
+            A tuple of two strings specifying the metrics to sort by for test and validation sets (e.g., ('accuracy', 'accuracy_mean')).
         ascending : bool
-            是否升序。
-        '''
+            Whether to sort in ascending order. Default is False.
+        precision : int
+            Number of decimal places to display. Default is 4.
+        time : bool
+            Whether to display training and testing times.
+
+        Example:
+        --------
+        executer.format_print(sort_by=('accuracy', 'accuracy_mean'), ascending=True)
+        """
 
         if sort_by is not None:
             print(f'\n>> Test Result, sort by \'{sort_by[0]}\'.')
@@ -602,20 +774,24 @@ class KFlodCrossExecuter(Executer):
             ))
 
     def run_all(self, sort_by=['accuracy', 'accuracy_mean'], ascending=False, precision=4, time=False):
-        '''
-        运行所有实验。
+        """
+        Runs all experiments in the `clf_dict` and prints the results.
 
-        Parameters
+        Parameters:
         ----------
-        sort_by : str
-            按照哪个指标进行排序。接受两个位置，分别是测试和验证的指标。比如：('accuracy', 'accuracy_mean')，表示测试集按照accuracy指标进行排序，验证集按照accuracy_mean指标进行排序。
+        sort_by : list
+            A list of two strings specifying the metrics to sort by for test and validation sets.
         ascending : bool
-            是否升序。
+            Whether to sort the results in ascending order.
         precision : int
-            保留几位小数。
-        time: bool
-            是否显示训练和测试时间。
-        '''
+            Number of decimal places to display.
+        time : bool
+            Whether to include training and testing times in the output.
+
+        Example:
+        --------
+        executer.run_all(sort_by=['accuracy', 'accuracy_mean'], ascending=True)
+        """
 
         for name, clf in self.clf_dict.items():
             mtc, clf, times = self.execute(name, clf)
@@ -624,36 +800,65 @@ class KFlodCrossExecuter(Executer):
 
         self.format_print(sort_by, ascending, precision, time)
 
+    def get_result(self):
+        """
+        Return the experiment results as a DataFrame.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing the experiment results.
+
+        Example:
+        test, valid = executer.get_result()  # Get the result DataFrame
+        """
+
+        return self.test, self.valid
+
 
 class LeaveOneCrossExecuter(KFlodCrossExecuter):
-    '''
-    使用留一法交叉验证作为Validation的执行器。
-    ==========
-      - 快捷管理训练，测试，日志全过程，并灵活调试Classifier数组里面的各个模型。
-      - 开启Log，支持中途运行出错，结果不丢失。
-      - 在使用的时候根据需要重写execute(self)方法。
+    """
+    Executor class using Leave-One-Out Cross-Validation (LOO-CV) for model validation.
+    ===========================================================================
+    This class extends the `KFlodCrossExecuter` class and uses Leave-One-Out Cross-Validation (LOO-CV)
+    to evaluate classifier performance. In this validation method, for each iteration, one sample is used
+    as the test set while the remaining samples are used as the training set.
 
-    Parameters
+    Key Features:
+    -------------
+    - Manages training, testing, and logging workflows.
+    - Implements Leave-One-Out Cross-Validation (LOO-CV) for more thorough model evaluation.
+    - Supports logging of results, ensuring data persistence even if errors occur.
+    - Flexibly adjusts classifiers within the `clf_dict` array for multiple experiments.
+    - Customizable `execute(self)` method to fit specific classifier needs.
+
+    Parameters:
     ----------
     X_train : jnp.ndarray
-        训练集的X。
+        Feature matrix for the training data.
     y_train : jnp.ndarray
-        训练集的y。
+        Labels for the training data.
     X_test : jnp.ndarray
-        测试集的X。
+        Feature matrix for the test data.
     y_test : jnp.ndarray
-        测试集的y。
+        Labels for the test data.
     clf_dict : dict
-        Clf字典。包含多个实验的{name : Clf}
-    metric_list : list
-        测评指标列表。在两端分别加上name和time之后，作为结果表格的表头。
-    log : bool
-        是否开启日志。开启之后会将过程参数写入到对应文件夹的hyper.toml，将测试结果写入到同一文件夹的test.csv，将Validation结果写入到同一文件夹的valid.csv。
-    log_dir : str
-        存放日志的文件夹。日志会被放到一个日期为名字的子文件夹里面。
-    n_class: int
-        分类任务的类别数。
-    '''
+        Dictionary of classifiers, where each key is an experiment name and the value is the classifier instance.
+    metric_list : list, optional
+        List of evaluation metrics, such as ['accuracy', 'macro_f1', 'micro_f1'], default is `['accuracy', 'macro_f1', 'micro_f1', 'avg_recall']`.
+    log : bool, optional
+        If True, logging is enabled and results are saved in the `log_dir` directory. Default is False.
+    log_dir : str, optional
+        Directory where logs will be stored. Default is `'./log/'`.
+    n_class : int
+        The number of classes in the classification task.
+
+    Example:
+    --------
+    # Example usage for running LOO-CV experiments:
+    executer = LeaveOneCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, n_class=3, log=True)
+    executer.run_all()
+    """
 
     def __init__(self, X_train, y_train, X_test, y_test,
                  clf_dict: dict,
@@ -661,6 +866,28 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
                  log=False,
                  n_class=None,
                  log_dir='./log/'):
+        """
+        Initializes the LeaveOneCrossExecuter class for Leave-One-Out Cross-Validation (LOO-CV).
+
+        Parameters:
+        -----------
+        X_train, y_train, X_test, y_test : jnp.ndarray
+            Training and testing data (features and labels).
+        clf_dict : dict
+            Dictionary containing classifier models for experimentation.
+        metric_list : list, optional
+            List of evaluation metrics for performance measurement. Default is `['accuracy', 'macro_f1', 'micro_f1', 'avg_recall']`.
+        log : bool, optional
+            Whether to enable logging. Default is False.
+        n_class : int
+            The number of classes in the classification task.
+        log_dir : str, optional
+            Directory where logs will be saved. Default is `'./log/'`.
+
+        Example:
+        --------
+        executer = LeaveOneCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, n_class=3, log=True)
+        """
 
         super(LeaveOneCrossExecuter, self).__init__(X_train, y_train, X_test, y_test,
                                                     clf_dict=clf_dict,
@@ -675,46 +902,37 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
             self.n_class = n_class
 
     def execute(self, name, clf):
-        '''
-        执行实验，不记录日志。
+        """
+        Executes an experiment using Leave-One-Out Cross-Validation (LOO-CV) and returns evaluation metrics.
 
-        Notes
-        -----
-          - 这里必须返回一个测试器和一个训练好的分类器，因为写入日志要用。
-
-        Parameters
+        Parameters:
         ----------
         name : str
-            实验的名字。
+            Name of the experiment.
         clf : Clfs
-            实验获取的分类器，继承自接口Clfs。
+            Classifier used for the experiment.
 
-        Returns
+        Returns:
         -------
         clf : Clfs
-            训练好的分类器。
-        metric: Metrics
-            有记录的Metric实例。
+            Trained classifier.
+        metric : Metrics
+            Recorded metrics for the experiment.
 
-        Examples
+        Example:
         --------
-
-        可以这么重写：
+        You can override this method for custom behavior like so:
         ```python
-        class MyExcuter(Excuter):
+        class MyExecuter(LeaveOneCrossExecuter):
             def execute(self, name, clf):
-                print(f'>> {name}')
-
+                print(f'Running {name}')
                 clf.fit(self.X_train, self.y_train)
-                print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
-
                 y_pred = clf.predict(self.X_test)
-
-                mtc = Metrics(self.y_test, y_pred)
-
-                return mtc, clf
+                metrics = Metrics(self.y_test, y_pred)
+                return metrics, clf
         ```
-        '''
+        """
+
         print(f'>> {name}')
 
         # k折交叉验证
@@ -751,34 +969,50 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
 
 
 class BootstrapExecuter(Executer):
-    '''
-    使用Bootstrap方法作为Validation的执行器。
-    ==========
-      - 快捷管理训练，测试，日志全过程，并灵活调试Classifier数组里面的各个模型。
-      - 开启Log，支持中途运行出错，结果不丢失。
-      - 在使用的时候根据需要重写execute(self)方法。
+    """
+    Executor class using Bootstrap resampling for model validation.
+    =============================================================
+    This class extends the `Executer` base class and implements Bootstrap resampling
+    for model validation. Bootstrap involves generating multiple random resamples of
+    the data with replacement and evaluating model performance across these samples.
 
-    Parameters
+    Key Features:
+    -------------
+    - Manages the full cycle of training, testing, and logging for experiments.
+    - Implements Bootstrap resampling for robust model evaluation.
+    - Supports logging of results, even if the process encounters errors.
+    - Allows for flexible adjustments to classifiers within the `clf_dict` array for multiple experiments.
+    - You can override the `execute(self)` method to customize the model fitting process.
+
+    Parameters:
     ----------
     X_train : jnp.ndarray
-        训练集的X。
+        Feature matrix for the training data.
     y_train : jnp.ndarray
-        训练集的y。
+        Labels for the training data.
     X_test : jnp.ndarray
-        测试集的X。
+        Feature matrix for the test data.
     y_test : jnp.ndarray
-        测试集的y。
+        Labels for the test data.
     clf_dict : dict
-        Clf字典。包含多个实验的{name : Clf}
-    metric_list : list
-        测评指标列表。在两端分别加上name和time之后，作为结果表格的表头。
-    n_bootstraps : int
-        Bootstrap重采样的次数。
-    log : bool
-        是否开启日志。开启之后会将过程参数写入到对应文件夹的hyper.toml，将测试结果写入到同一文件夹的test.csv，将Validation结果写入到同一文件夹的valid.csv。
-    log_dir : str
-        存放日志的文件夹。日志会被放到一个日期为名字的子文件夹里面。
-    '''
+        Dictionary containing classifiers, where each key is an experiment name and the value is the classifier instance.
+    metric_list : list, optional
+        List of evaluation metrics, such as ['accuracy', 'macro_f1', 'micro_f1']. Default is `['accuracy', 'macro_f1', 'micro_f1', 'avg_recall']`.
+    n_bootstraps : int, optional
+        The number of bootstrap resamples to perform. Default is 100.
+    log : bool, optional
+        If True, logging is enabled and results are saved in the `log_dir` directory. Default is False.
+    random_state : int, optional
+        The random seed for reproducibility. Default is 42.
+    log_dir : str, optional
+        Directory where logs will be saved. Default is `'./log/'`.
+
+    Example:
+    --------
+    # Example usage for running Bootstrap resampling experiments:
+    executer = BootstrapExecuter(X_train, y_train, X_test, y_test, clf_dict, n_bootstraps=50, log=True)
+    executer.run_all()
+    """
 
     def __init__(self, X_train, y_train, X_test, y_test,
                  clf_dict: dict,
@@ -787,6 +1021,15 @@ class BootstrapExecuter(Executer):
                  log=False,
                  random_state=42,
                  log_dir='./log/'):
+        """
+        Initializes the BootstrapExecuter class for model validation with Bootstrap resampling.
+
+        Parameters are the same as described in the class-level docstring.
+
+        Example:
+        --------
+        executer = BootstrapExecuter(X_train, y_train, X_test, y_test, clf_dict)
+        """
 
         super(BootstrapExecuter, self).__init__(X_train, y_train, X_test, y_test,
                                                 clf_dict, metric_list, log, log_dir)
@@ -800,31 +1043,64 @@ class BootstrapExecuter(Executer):
         self.valid = pd.DataFrame(columns=['model'] + [f'{x}_{suffix}' for x in metrics for suffix in ['mean', 'std']])
 
     def execute(self, name, clf):
+        """
+        Executes an experiment using Bootstrap resampling and returns evaluation metrics.
 
+        Parameters:
+        ----------
+        name : str
+            Name of the experiment.
+        clf : Clfs
+            Classifier used for the experiment.
+
+        Returns:
+        -------
+        clf : Clfs
+            Trained classifier.
+        metric : Metrics
+            Recorded metrics for the experiment.
+
+        Example:
+        --------
+        You can override this method for custom behavior like so:
+        ```python
+        class MyExecuter(BootstrapExecuter):
+            def execute(self, name, clf):
+                print(f'Running {name}')
+                clf.fit(self.X_train, self.y_train)
+                y_pred = clf.predict(self.X_test)
+                metrics = Metrics(self.y_test, y_pred)
+                return metrics, clf
+        ```
+        """
+
+        # Bootstrap resampling procedure
         def __resample(key, X, y):
             """
-            执行Bootstrap采样。
+            Perform Bootstrap resampling on the given data.
 
-            参数:
-            - key: JAX随机数生成器的键
-            - X: 特征矩阵（JAX数组）
-            - y: 标签向量（JAX数组）
+            Parameters:
+            ----------
+            key : JAX PRNGKey
+                Random number generator key.
+            X : jnp.ndarray
+                Feature matrix.
+            y : jnp.ndarray
+                Label vector.
 
-            返回:
-            - 新的key: 更新后的随机数生成器键
-            - X_resampled: 经过Bootstrap采样后的特征矩阵
-            - y_resampled: 对应的标签向量
+            Returns:
+            -------
+            key : JAX PRNGKey
+                Updated random number generator key.
+            X_resampled : jnp.ndarray
+                Resampled feature matrix.
+            y_resampled : jnp.ndarray
+                Resampled label vector.
             """
-            # 分裂当前的key以获得新的子key，并更新key
+
             key, subkey = random.split(key)
-
-            # 获取样本数量
             n_samples = len(X)
-
-            # 使用random.choice从原始索引中有放回地抽取样本
             indices = random.choice(subkey, jnp.arange(n_samples), shape=(n_samples,), replace=True)
-
-            # 根据抽样得到的索引获取重采样的X和y
             X_resampled = X[indices]
             y_resampled = y[indices]
 
@@ -860,9 +1136,24 @@ class BootstrapExecuter(Executer):
         return mtcs, clf, times
 
     def logline(self, name, mtcs: list, clf, times):
-        '''
-        将某次实验的结果写入日志df。
-        '''
+        """
+        Logs the results of an experiment into the DataFrame for both testing and validation.
+
+        Parameters:
+        ----------
+        name : str
+            Name of the experiment.
+        mtcs : list
+            List of recorded metrics from Bootstrap resampling and final testing.
+        clf : Clfs
+            Classifier used in the experiment.
+        times : list
+            List containing training and testing times for each resample and final test.
+
+        Example:
+        --------
+        After the experiment execution, the results are logged into the DataFrame for later analysis.
+        """
 
         test_mtc = mtcs.pop()
         test_times = times.pop()
@@ -894,24 +1185,36 @@ class BootstrapExecuter(Executer):
         self.valid.loc[len(self.valid)] = [name] + valid_result
 
     def save_df(self):
+        """
+        Saves the results DataFrame to CSV files in the log directory.
+
+        Example:
+        --------
+        After running experiments, the results are saved in `test.csv` and `valid.csv` under the log directory.
+        """
+
         super().save_df()
         self.valid.to_csv(os.path.join(self.log_path, 'valid.csv'), index=False)
 
     def format_print(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False, precision=4, time=False):
-        '''
-        表格的格式化输出。
+        """
+        Formats and prints the results as a table, with optional sorting and time display.
 
-        Parameters
+        Parameters:
         ----------
-        sort_by : str
-            按照哪个指标进行排序。接受两个位置，分别是测试和验证的指标。比如：('accuracy', 'accuracy_mean')，表示测试集按照accuracy指标进行排序，验证集按照accuracy_mean指标进行排序。
+        sort_by : tuple
+            A tuple of two strings specifying the metrics to sort by for test and validation sets (e.g., ('accuracy', 'accuracy_mean')).
         ascending : bool
-            是否升序。
+            Whether to sort in ascending order. Default is False.
         precision : int
-            保留几位小数。
-        time: bool
-            是否显示训练和测试时间。
-        '''
+            Number of decimal places to display. Default is 4.
+        time : bool
+            Whether to display training and testing times.
+
+        Example:
+        --------
+        executer.format_print(sort_by=('accuracy', 'accuracy_mean'), ascending=True)
+        """
 
         if sort_by is not None:
             print(f'\n>> Test Result, sort by \'{sort_by[0]}\'.')
@@ -971,20 +1274,24 @@ class BootstrapExecuter(Executer):
             ))
 
     def run_all(self, sort_by=['accuracy', 'accuracy_mean'], ascending=False, precision=4, time=False):
-        '''
-        运行所有实验。
+        """
+        Runs all experiments in the `clf_dict` and prints the results.
 
-        Parameters
+        Parameters:
         ----------
-        sort_by : str
-            按照哪个指标进行排序。接受两个位置，分别是测试和验证的指标。比如：('accuracy', 'accuracy_mean')，表示测试集按照accuracy指标进行排序，验证集按照accuracy_mean指标进行排序。
+        sort_by : list
+            A list of two strings specifying the metrics to sort by for test and validation sets.
         ascending : bool
-            是否升序。
+            Whether to sort the results in ascending order.
         precision : int
-            保留几位小数。
-        time: bool
-            是否显示训练和测试时间。
-        '''
+            Number of decimal places to display.
+        time : bool
+            Whether to include training and testing times in the output.
+
+        Example:
+        --------
+        executer.run_all(sort_by=['accuracy', 'accuracy_mean'], ascending=True)
+        """
 
         for name, clf in self.clf_dict.items():
             mtc, clf, times = self.execute(name, clf)
@@ -992,3 +1299,18 @@ class BootstrapExecuter(Executer):
             self.logline(name, mtc, clf, times)
 
         self.format_print(sort_by, ascending, precision, time)
+
+    def get_result(self):
+        """
+        Return the experiment results as a DataFrame.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing the experiment results.
+
+        Example:
+        test, valid = executer.get_result()  # Get the result DataFrame
+        """
+
+        return self.test, self.valid

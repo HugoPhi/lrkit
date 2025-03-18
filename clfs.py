@@ -1,14 +1,133 @@
-from abc import ABC, abstractmethod
-from functools import wraps
+"""
+Classifier Interface Module
+
+This module provides an abstract base class for creating classifier implementations with
+consistent APIs, along with utility decorators for timing measurements. The design enables:
+- Unified interface for different classifier implementations
+- Separation of concerns between predictors, data handling, and model architecture
+- Built-in training and inference timing metrics
+- Parameter serialization for experiment reproducibility
+
+Key Components:
+- timing: Decorator for measuring method execution time
+- Clfs: Abstract Base Class defining classifier interface
+
+Example Usage:
+
+1. Basic Implementation Example:
+    class LogisticRegressionClassifier(Clfs):
+        def __init__(self, learning_rate=0.01, iterations=100):
+            super().__init__()
+            self.learning_rate = learning_rate
+            self.iterations = iterations
+
+        @timing
+        def fit(self, X_train, y_train, load=False):
+            # Implementation here
+            pass
+
+        @timing
+        def predict_proba(self, x_test):
+            # Implementation here
+            return probabilities
+
+    # Instantiate and use classifier
+    clf = LogisticRegressionClassifier(learning_rate=0.1)
+    clf.fit(X_train, y_train)
+    predictions = clf.predict(X_test)
+    print(f"Training time: {clf.get_training_time():.2f}s")
+    print(f"Model parameters: {clf.get_params()}")
+
+2. scikit-learn Compatibility Example:
+    class SklearnWrapper(Clfs):
+        def __init__(self, sklearn_model):
+            super().__init__()
+            self.model = sklearn_model
+
+        @timing
+        def fit(self, X_train, y_train, load=False):
+            self.model.fit(X_train, y_train)
+            return self
+
+        @timing
+        def predict_proba(self, x_test):
+            return self.model.predict_proba(x_test)
+
+    # Usage with scikit-learn model
+    from sklearn.ensemble import RandomForestClassifier
+    sklearn_model = RandomForestClassifier(n_estimators=100)
+    clf = SklearnWrapper(sklearn_model)
+    clf.fit(X_train, y_train)
+    print(f"Training time: {clf.get_training_time():.2f}s")
+
+3. PyTorch Compatibility Example:
+    class TorchClassifier(Clfs):
+        def __init__(self, model, optimizer, criterion, epochs=10):
+            super().__init__()
+            self.model = model
+            self.optimizer = optimizer
+            self.criterion = criterion
+            self.epochs = epochs
+
+        @timing
+        def fit(self, X_train, y_train, load=False):
+            self.model.train()
+            for epoch in range(self.epochs):
+                # Training loop implementation
+                pass
+            return self
+
+        @timing
+        def predict_proba(self, x_test):
+            self.model.eval()
+            with torch.no_grad():
+                outputs = self.model(x_test)
+                return torch.softmax(outputs, dim=1).numpy()
+
+    # Usage with PyTorch model
+    import torch
+    import torch.nn as nn
+    model = nn.Sequential(
+        nn.Linear(20, 64),
+        nn.ReLU(),
+        nn.Linear(64, 10)
+    optimizer = torch.optim.Adam(model.parameters())
+    criterion = nn.CrossEntropyLoss()
+    clf = TorchClassifier(model, optimizer, criterion, epochs=20)
+    clf.fit(X_train, y_train)
+    probs = clf.predict_proba(X_test)
+"""
+
 import time
+from functools import wraps
+from abc import ABC, abstractmethod
+
 import inspect
 import jax.numpy as jnp
 
 
 def timing(func):
-    '''
-    统计训练和测试时间的修饰器。
-    '''
+    """
+    Decorator for measuring and storing execution time of training/test methods.
+
+    The measured time is stored in the object's:
+    - training_time property for 'fit' method
+    - testing_time property for 'predict' or 'predict_proba' methods
+
+    Args:
+        func (callable): Method to be timed. Must be one of ['fit', 'predict', 'predict_proba']
+
+    Returns:
+        callable: Wrapped method with timing functionality
+
+    Raises:
+        ValueError: If applied to unsupported method names
+
+    Example:
+        @timing
+        def fit(self, X_train, y_train):
+            # Training implementation
+    """
 
     if func.__name__ in ['predict', 'predict_proba']:
         @wraps(func)
@@ -33,31 +152,33 @@ def timing(func):
 
 
 class Clfs(ABC):
-    '''
-    Classifier 接口
-    ===============
-    - fit(self, X_train, y_train, load=Flase): 训练分类器
-    - predict(self, x_test): 返回x_test的预测值
-    - predict_proba(self, x_test): 返回x_test的预测概率矩阵
-    - get_params(self): 返回超参数字典，用于复刻实验
-    - get_training_time(self): 获取训练时间，如果load=False
-    - get_testing_time(self): 获取测试时间
+    """
+    Abstract Base Class defining standardized classifier interface.
 
-    Notes
-    -----
-    1. 这样的接口设计可以使得学习器的训练和学习过程有一个同一的API，便于不同框架下模型的对比
-    2. 这套接口让'预测器'和将要使用的数据集分割开；让预测器和模型的具体架构分割开
+    Subclasses must implement:
+    - __init__: Constructor for initial parameters
+    - fit: Training method implementation
+    - predict_proba: Probability prediction implementation
 
-    并且，以下接口是虚的，必须要实现：
+    Provides default implementations for:
+    - predict: Converts probability output to class labels
+    - parameter management
+    - timing metrics access
 
-    - fit
-    - predict_proba
-    '''
+    Attributes:
+        training_time (float): Time in seconds for last fit() call (-1 if not trained)
+        testing_time (float): Time in seconds for last predict/predict_proba call (-1 if not tested)
+        params (dict): Dictionary of constructor parameters for reproducibility
+    """
 
     def __new__(cls, *args, **kwargs):
-        '''
-        这个方法会在子类初始化的时候被调用，可以把子类的所有参数放入到params字典里面。
-        '''
+        """
+        Instance factory that captures initialization parameters.
+
+        Automatically populates the `params` attribute by analyzing __init__ arguments.
+        Handles nested dictionary parameters through recursive merging.
+        """
+
         instance = super().__new__(cls)
         original_init = cls.__init__
         sig = inspect.signature(original_init)
@@ -80,95 +201,95 @@ class Clfs(ABC):
 
     @abstractmethod
     def __init__(self):
-        '''
-        初始化。
-        '''
+        """
+        Initialize classifier instance.
+
+        Note: Subclasses must call super().__init__() to properly initialize
+        timing attributes.
+        """
 
         self.training_time = -1
         self.testing_time = -1
 
     def predict(self, x_test) -> jnp.ndarray:
-        '''
-        根据模型计算结果。直接返回预测结果。
+        """
+        Predict class labels for input samples.
 
-        Notes
-        -----
-          - 返回y_train同样形式的结果向量。
-          - 在这里要统计预测时间。
+        Args:
+            x_test (jnp.ndarray): Input data of shape (n_samples, n_features)
 
-        Parameters
-        ----------
-        x_test : jax.numpy.ndarray
-            测试集
-        '''
+        Returns:
+            jnp.ndarray: Predicted class labels of shape (n_samples,)
+
+        Note:
+            - Calls predict_proba internally and applies argmax
+            - Updates testing_time attribute via timing decorator
+        """
 
         proba = self.predict_proba(x_test)
         return jnp.argmax(proba, axis=1)
 
     @abstractmethod
     def predict_proba(self, x_test) -> jnp.ndarray:
-        '''
-        根据模型计算结果。返回预测的概率。
+        """
+        Compute class probability estimates for input samples.
 
-        Notes
-        -----
-          - 这里返回经过softmax之后的概率矩阵。
-          - 在这里要统计预测时间。
+        Args:
+            x_test (jnp.ndarray): Input data of shape (n_samples, n_features)
 
-        Parameters
-        ----------
-        x_test : jax.numpy.ndarray
-            测试集
-        '''
+        Returns:
+            jnp.ndarray: Probability estimates of shape (n_samples, n_classes)
+
+        Note:
+            - Should return values after softmax transformation
+            - Updates testing_time attribute via timing decorator
+        """
 
         pass
 
     @abstractmethod
     def fit(self, X_train, y_train, load=False):
-        '''
-        训练模型。
+        """
+        Train classifier model.
 
-        Notes
-        -----
-          - 在这里要统计测试时间。
-        '''
+        Args:
+            X_train (jnp.ndarray): Training data of shape (n_samples, n_features)
+            y_train (jnp.ndarray): Target values of shape (n_samples,)
+            load (bool, optional): If True, skip training (for loading pretrained models)
+
+        Note:
+            - Updates training_time attribute via timing decorator
+        """
 
         pass
 
     def get_params(self) -> dict:
-        '''
-        获取超参数。
+        """
+        Retrieve constructor parameters for reproducibility.
 
-        Notes
-        -----
-          - 返回self.params，就是__init__()所需要的参数。用于编写日志复刻模型。
-
-        Returns
-        -------
-        self.params : dict
-            当前类的__init__的所有参数
-        '''
+        Returns:
+            dict: Dictionary of parameters that fully define the classifier state.
+                  Can be used with __init__ to create an equivalent instance.
+        """
 
         return self.params
 
     def get_training_time(self):
-        '''
-        返回最近一次模型训练的时间。
+        """
+        Retrieve duration of last training operation.
 
-        Notes
-        -----
-          - 返回训练模型的时间，通常返回self.training_time
-        '''
+        Returns:
+            float: Training time in seconds. Returns -1 if model hasn't been trained.
+        """
 
         return self.training_time
 
     def get_testing_time(self):
-        '''
-        返回最近一次模型测试的时间。
+        """
+        Retrieve duration of last inference operation.
 
-        Notes
-        -----
-          - 返回最近一次模型测试的时间，通常返回self.testing_time
-        '''
+        Returns:
+            float: Testing time in seconds. Returns -1 if no inference performed.
+        """
 
         return self.testing_time

@@ -1,24 +1,95 @@
+"""
+Metrics Evaluation Module
+
+This module provides the `Metrics` class to compute and store various classification performance metrics.
+The `Metrics` class computes key evaluation metrics like Precision, Recall, F1 Score, Accuracy, and ROC/AUC.
+It supports both binary and multi-class classification problems, with additional support for probability-based predictions
+when classification probabilities are available.
+
+Key Features:
+-------------
+- Precision, Recall, F1 Score: For each class, computes these fundamental classification metrics.
+- Accuracy: Computes overall accuracy as the ratio of correct predictions to total predictions.
+- ROC Curve & AUC: Calculates the Receiver Operating Characteristic curve and Area Under the Curve (AUC) for each class.
+- Average Precision (AP): Computes the average precision score using the one-vs-rest approach.
+- Confusion Matrix: Provides the confusion matrix for the classification problem, showing true positives, false positives, etc.
+
+Usage:
+------
+1. Basic Example:
+    metrics = Metrics(y_true, y_pred)
+    print("Precision per class:", metrics.precision())
+    print("Recall per class:", metrics.recall())
+    print("F1 Score per class:", metrics.f1())
+    print("Overall Accuracy:", metrics.accuracy())
+
+2. Using ROC and AUC:
+    if metrics.proba:
+        print("ROC:", metrics.roc())
+        print("AUC:", metrics.auc())
+
+3. Using Average Precision:
+    if metrics.proba:
+        print("Average Precision:", metrics.avg_ap())
+
+Attributes:
+-----------
+- y: True class labels for the dataset.
+- y_pred: Predicted class labels or probabilities.
+- classes: Number of classes in the classification task.
+- matrix: Confusion matrix showing the true vs predicted label counts.
+- proba: Boolean indicating if `y_pred` contains probabilities or hard class labels.
+"""
+
 import jax.numpy as jnp
 
 
 class Metrics:
     '''
-    分类模型的评价指标。
+    Classification Model Evaluation Metrics.
+
+    This class computes various evaluation metrics to assess the performance of classification models.
+    It includes common metrics such as Precision, Recall, F1 Score, Accuracy, ROC, AUC, and Average Precision.
+    The class supports both single-label and multi-class classification problems, with options for
+    handling probability-based predictions.
+
+    Key Metrics:
+    -------------
+    - Precision: Measures the ratio of true positives to predicted positives for each class.
+    - Recall: Measures the ratio of true positives to actual positives for each class.
+    - F1 Score: The harmonic mean of Precision and Recall.
+    - Accuracy: The proportion of correctly classified samples.
+    - ROC and AUC: Evaluates classifier performance in distinguishing between classes based on true positive and false positive rates.
+    - Average Precision (AP): Calculates the average precision across different classification thresholds.
+
+    Attributes:
+    -----------
+    y : jnp.ndarray
+        True class labels.
+    y_pred : jnp.ndarray
+        Predicted class labels or probabilities.
+    classes : int
+        Number of classes in the classification problem.
+    matrix : jnp.ndarray
+        Confusion matrix for true vs predicted labels.
+    proba : bool
+        Whether the model provides probabilities (True) or hard predictions (False).
     '''
 
     def __init__(self, y, y_pred, classes=None):
         '''
-        初始化。y必须从0开始。
+        Initialize the Metrics class to compute evaluation metrics. y & y_pred should be 1D or 2D & labeled start from '0'.
 
-        Parameters
+        Parameters:
         ----------
         y : jnp.ndarray
-            真实标签。
+            True class labels.
         y_pred : jnp.ndarray
-            预测标签。
-        classes : int
-            分类的类别，通常在样本数量较小，或者无法包含所有类别的时候用，默认是None。
+            Predicted class labels or probabilities.
+        classes : int, optional
+            The number of classes. If None, the number of unique labels in `y` will be used.
         '''
+        self.y
 
         self.y = y
         self.y_pred = y_pred
