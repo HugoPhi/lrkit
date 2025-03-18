@@ -651,12 +651,15 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
         是否开启日志。开启之后会将过程参数写入到对应文件夹的hyper.toml，将测试结果写入到同一文件夹的test.csv，将Validation结果写入到同一文件夹的valid.csv。
     log_dir : str
         存放日志的文件夹。日志会被放到一个日期为名字的子文件夹里面。
+    n_class: int
+        分类任务的类别数。
     '''
 
     def __init__(self, X_train, y_train, X_test, y_test,
                  clf_dict: dict,
                  metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
                  log=False,
+                 n_class=None,
                  log_dir='./log/'):
 
         super(LeaveOneCrossExecuter, self).__init__(X_train, y_train, X_test, y_test,
@@ -665,6 +668,86 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
                                                     k=X_train.shape[0],  # 留一法就是N折验证，N是训练集的大小。
                                                     log=False,
                                                     log_dir='./log/')
+
+        if n_class is None:
+            raise ValueError('n_class for LeaveOneCrossExecuter can not be None.')
+        else:
+            self.n_class = n_class
+
+    def execute(self, name, clf):
+        '''
+        执行实验，不记录日志。
+
+        Notes
+        -----
+          - 这里必须返回一个测试器和一个训练好的分类器，因为写入日志要用。
+
+        Parameters
+        ----------
+        name : str
+            实验的名字。
+        clf : Clfs
+            实验获取的分类器，继承自接口Clfs。
+
+        Returns
+        -------
+        clf : Clfs
+            训练好的分类器。
+        metric: Metrics
+            有记录的Metric实例。
+
+        Examples
+        --------
+
+        可以这么重写：
+        ```python
+        class MyExcuter(Excuter):
+            def execute(self, name, clf):
+                print(f'>> {name}')
+
+                clf.fit(self.X_train, self.y_train)
+                print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
+
+                y_pred = clf.predict(self.X_test)
+
+                mtc = Metrics(self.y_test, y_pred)
+
+                return mtc, clf
+        ```
+        '''
+        print(f'>> {name}')
+
+        # k折交叉验证
+        k_fold_x_train = jnp.array_split(self.X_train, self.k)
+        k_fold_y_train = jnp.array_split(self.y_train, self.k)
+        mtcs = []
+        times = []  # validation training, teting time + test training, testing time
+        for i in range(self.k):
+            print(f'>>>> Validate: {i + 1}')
+            x_train = jnp.concatenate(k_fold_x_train[:i] + k_fold_x_train[i + 1:])
+            y_train = jnp.concatenate(k_fold_y_train[:i] + k_fold_y_train[i + 1:])
+            x_test = k_fold_x_train[i]
+            y_test = k_fold_y_train[i]
+            clf.fit(x_train, y_train)
+
+            y_pred = clf.predict(x_test)
+            mtc = Metrics(y_test, y_pred, self.n_class)
+            times.append([clf.get_training_time(), clf.get_testing_time()])
+            mtcs.append(mtc)
+
+        # real train & test
+        print('>>>> Test:')
+        clf.fit(self.X_train, self.y_train)  # 训练分类器
+        print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
+
+        y_pred = clf.predict(self.X_test)
+
+        mtc = Metrics(self.y_test, y_pred, self.n_class)  # 构建测试器
+        mtcs.append(mtc)
+        print(f'Testing {name} Cost: {clf.get_testing_time():.4f} s')
+        times.append([clf.get_training_time(), clf.get_testing_time()])
+
+        return mtcs, clf, times  # 返回所有测试器和分类器和验证时间
 
 
 class BootstrapExecuter(Executer):
@@ -750,6 +833,7 @@ class BootstrapExecuter(Executer):
         print(f'>> {name}')
 
         mtcs = []
+        times = []
         key = random.PRNGKey(self.random_state)
         for i in range(self.n_bootstraps):
             # Bootstrap 采样
@@ -760,6 +844,7 @@ class BootstrapExecuter(Executer):
             y_pred = clf.predict(X_resampled)
             mtc = Metrics(y_resampled, y_pred)
             mtcs.append(mtc)
+            times.append([clf.get_training_time(), clf.get_testing_time()])
 
         # 真实的训练和测试
         print('>>>> Test:')
@@ -770,8 +855,9 @@ class BootstrapExecuter(Executer):
         mtc = Metrics(self.y_test, y_pred)
         mtcs.append(mtc)
         print(f'Testing {name} Cost: {clf.get_testing_time():.4f} s')
+        times.append([clf.get_training_time(), clf.get_testing_time()])
 
-        return mtcs, clf
+        return mtcs, clf, times
 
     def logline(self, name, mtcs: list, clf, times):
         '''
