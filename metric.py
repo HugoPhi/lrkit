@@ -1,41 +1,59 @@
+"""
+Metrics Evaluation Module (NumPy Version)
+
+This module provides the `Metrics` class to compute and store various classification performance metrics.
+The `Metrics` class computes key evaluation metrics like Precision, Recall, F1 Score, Accuracy, and ROC/AUC.
+It supports both binary and multi-class classification problems, with additional support for probability-based predictions
+when classification probabilities are available.
+
+Key Features:
+-------------
+- Precision, Recall, F1 Score: For each class, computes these fundamental classification metrics.
+- Accuracy: Computes overall accuracy as the ratio of correct predictions to total predictions.
+- ROC Curve & AUC: Calculates the Receiver Operating Characteristic curve and Area Under the Curve (AUC) for each class.
+- Average Precision (AP): Computes the average precision score using the one-vs-rest approach.
+- Confusion Matrix: Provides the confusion matrix for the classification problem, showing true positives, false positives, etc.
+"""
+
 import numpy as np
 
 
 class Metrics:
     '''
-    分类模型的评价指标。
+    Classification Model Evaluation Metrics (NumPy Version).
 
-    Examples
-    --------
-    ```python
-    y_true = np.array([0, 1, 2])         # 真实标签
-    y_pred = np.array([[0.7, 0.1, 0.2],  # 对应样本的预测概率，一行为一个样本
-                       [0.3, 0.3, 0.4],
-                       [0.2, 0.1, 0.7]])
-    ```
-    尤其是二分类，一定要做成两类：
-    ```python
-    y_true = np.array([0, 1])       # 真实标签
-    y_pred = np.array([[0.9, 0.1],  # 对应样本的预测概率，一行为一个样本
-                       [0.3, 0.7],
-                       [0.2, 0.8]]
-    ```
+    This class computes various evaluation metrics to assess the performance of classification models.
+    It includes common metrics such as Precision, Recall, F1 Score, Accuracy, ROC, AUC, and Average Precision.
+    The class supports both single-label and multi-class classification problems, with options for
+    handling probability-based predictions.
+
+    Attributes:
+    -----------
+    y : np.ndarray
+        True class labels.
+    y_pred : np.ndarray
+        Predicted class labels or probabilities.
+    classes : int
+        Number of classes in the classification problem.
+    matrix : np.ndarray
+        Confusion matrix for true vs predicted labels.
+    proba : bool
+        Whether the model provides probabilities (True) or hard predictions (False).
     '''
 
     def __init__(self, y, y_pred, classes=None):
         '''
-        初始化。
+        Initialize the Metrics class to compute evaluation metrics. y & y_pred should be 1D or 2D & labeled start from '0'.
 
-        Parameters
+        Parameters:
         ----------
         y : np.ndarray
-            真实标签。
+            True class labels.
         y_pred : np.ndarray
-            预测标签。
-        proba : bool
-            输入是否为概率向量。
+            Predicted class labels or probabilities.
+        classes : int, optional
+            The number of classes. If None, the number of unique labels in `y` will be used.
         '''
-
         self.y = y
         self.y_pred = y_pred
 
@@ -56,9 +74,9 @@ class Metrics:
 
         if len(self.y_pred.shape) == 1:
             temp_y_pred = self.y_pred
-        if len(self.y_pred.shape) == 2:
+        elif len(self.y_pred.shape) == 2:
             temp_y_pred = np.argmax(self.y_pred, axis=1)
-        elif len(self.y_pred.shape) > 2:
+        else:
             raise ValueError('Input y_pred must be 1D or 2D.')
 
         if len(self.y.shape) == 2 and len(self.y_pred.shape) == 2:
@@ -73,62 +91,51 @@ class Metrics:
         '''
         Compute the precision for each class.
 
-        Precision is the ratio of true positives to the total predicted positives.
-
         Returns
         -------
-        numpy.ndarray
+        np.ndarray
             The precision of each class.
         '''
-        return np.diag(self.matrix) / self.matrix.sum(axis=0)
+        return np.diag(self.matrix) / (self.matrix.sum(axis=0) + 1e-10)  # Add small value to avoid division by zero
 
     def recall(self):
         '''
         Compute the recall for each class.
 
-        Recall is the ratio of true positives to the total actual positives.
-
         Returns
         -------
-        numpy.ndarray
+        np.ndarray
             The recall of each class.
         '''
-
-        return np.diag(self.matrix) / self.matrix.sum(axis=1)
+        return np.diag(self.matrix) / (self.matrix.sum(axis=1) + 1e-10)
 
     def f1(self):
         '''
         Compute the F1 score for each class.
 
-        The F1 score is the harmonic mean of precision and recall.
-
         Returns
         -------
-        numpy.ndarray
+        np.ndarray
             The F1 score of each class.
         '''
-
-        return 2 * self.precision() * self.recall() / (self.precision() + self.recall())
+        prec = self.precision()
+        rec = self.recall()
+        return 2 * prec * rec / (prec + rec + 1e-10)
 
     def accuracy(self):
         '''
         Compute the overall accuracy.
-
-        Accuracy is the ratio of correctly predicted instances to the total instances.
 
         Returns
         -------
         float
             The accuracy of the model.
         '''
-
-        return np.diag(self.matrix).sum() / self.matrix.sum()
+        return np.diag(self.matrix).sum() / (self.matrix.sum() + 1e-10)
 
     def roc(self):
         '''
-        Compute the ROC curve for each class. Only callable when 'proba == Ture'
-
-        Uses the one-vs-rest ('ovr') approach and returns the AUC for each class.
+        Compute the ROC curve for each class. Only callable when 'proba == True'
 
         Returns
         -------
@@ -136,7 +143,6 @@ class Metrics:
             A list where each element is a tuple containing true positive rates (TPR)
             and false positive rates (FPR) for each class.
         '''
-
         if not self.proba:
             raise ValueError('roc() can only be called when y & y_pred are proba matrix')
 
@@ -146,17 +152,17 @@ class Metrics:
             fp = np.sum((y_pred == 1) & (y_true == 0))
             fn = np.sum((y_pred == 0) & (y_true == 1))
 
-            tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
-            fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+            tpr = tp / (tp + fn + 1e-10)
+            fpr = fp / (fp + tn + 1e-10)
             return tpr, fpr
 
         rocs = []
         for class_idx in range(self.classes):
             tprs = []
             fprs = []
-            thresholds = self.y_pred[:, class_idx].reshape(-1)
-            for threshold in np.sort(thresholds)[::-1]:
-                idx_pred = (self.y_pred[:, class_idx] >= threshold).astype(int)  # '=' here is important
+            thresholds = np.sort(self.y_pred[:, class_idx])[::-1]
+            for threshold in thresholds:
+                idx_pred = (self.y_pred[:, class_idx] >= threshold).astype(int)
                 idx_true = (self.y == class_idx).astype(int).reshape(-1)
                 tpr, fpr = calculate_tpr_fpr(idx_true, idx_pred)
                 tprs.append(tpr)
@@ -168,16 +174,13 @@ class Metrics:
 
     def auc(self):
         '''
-        Compute the AUC for each class. Only callable when 'proba == Ture'
-
-        Uses the one-vs-rest ('ovr') approach to calculate the AUC for each class.
+        Compute the AUC for each class. Only callable when 'proba == True'
 
         Returns
         -------
-        numpy.ndarray
+        np.ndarray
             The AUC of each class.
         '''
-
         if not self.proba:
             raise ValueError('auc() can only be called when y & y_pred are proba matrix')
 
@@ -193,16 +196,13 @@ class Metrics:
 
     def ap(self):
         '''
-        Compute the Average Precision (AP) for each class. Only callable when 'proba == Ture'
-
-        Uses the one-vs-rest ('ovr') approach to calculate the AP for each class.
+        Compute the Average Precision (AP) for each class. Only callable when 'proba == True'
 
         Returns
         -------
-        numpy.ndarray
+        np.ndarray
             The average precision (AP) of each class.
         '''
-
         if not self.proba:
             raise ValueError('ap() can only be called when y & y_pred are proba matrix')
 
@@ -211,17 +211,17 @@ class Metrics:
             fp = np.sum((y_pred == 1) & (y_true == 0))
             fn = np.sum((y_pred == 0) & (y_true == 1))
 
-            prec = tp / (tp + fp) if (tp + fp) > 0 else 0
-            rec = tp / (tp + fn) if (fp + fn) > 0 else 0
+            prec = tp / (tp + fp + 1e-10)
+            rec = tp / (tp + fn + 1e-10)
             return prec, rec
 
         aps = []
         for class_idx in range(self.classes):
             precs = []
             recs = []
-            thresholds = self.y_pred[:, class_idx].reshape(-1)
-            for threshold in np.sort(thresholds)[::-1]:
-                idx_pred = (self.y_pred[:, class_idx] >= threshold).astype(int)  # '=' here is important
+            thresholds = np.sort(self.y_pred[:, class_idx])[::-1]
+            for threshold in thresholds:
+                idx_pred = (self.y_pred[:, class_idx] >= threshold).astype(int)
                 idx_true = (self.y == class_idx).astype(int).reshape(-1)
                 prec, rec = calculate_prec_rec(idx_true, idx_pred)
                 precs.append(prec)
@@ -232,21 +232,19 @@ class Metrics:
                 ap += (recs[i] - recs[i - 1]) * (precs[i] + precs[i - 1]) / 2
             aps.append(ap)
 
-        return aps
+        return np.array(aps)
 
     def avg_ap(self):
         '''
-        Compute the average of average precision (AP) scores. Only callable when 'proba == Ture'
+        Compute the average of average precision (AP) scores. Only callable when 'proba == True'
 
         Returns
         -------
         float
             The mean average precision score across all classes.
         '''
-
         if not self.proba:
             raise ValueError('avg_ap() can only be called when y & y_pred are proba matrix')
-
         return self.ap().mean()
 
     def avg_pre(self):
@@ -258,7 +256,6 @@ class Metrics:
         float
             The mean precision score across all classes.
         '''
-
         return self.precision().mean()
 
     def avg_recall(self):
@@ -270,7 +267,6 @@ class Metrics:
         float
             The mean recall score across all classes.
         '''
-
         return self.recall().mean()
 
     def avg_auc(self):
@@ -282,37 +278,31 @@ class Metrics:
         float
             The mean AUC score across all classes.
         '''
-
         return self.auc().mean()
 
     def macro_f1(self):
         '''
         Compute the macro F1 score.
 
-        The macro F1 score is the average F1 score across all classes.
-
         Returns
         -------
         float
             The macro F1 score.
         '''
-
         return self.f1().mean()
 
     def micro_f1(self):
         '''
         Compute the micro F1 score.
 
-        The micro F1 score is computed using the global counts of true positives,
-        false positives, and false negatives across all classes.
-
         Returns
         -------
         float
             The micro F1 score.
         '''
-
-        return 2 * self.precision().mean() * self.recall().mean() / (self.precision().mean() + self.recall().mean())
+        prec = self.precision().mean()
+        rec = self.recall().mean()
+        return 2 * prec * rec / (prec + rec + 1e-10)
 
     def confusion_matrix(self):
         '''
@@ -320,10 +310,9 @@ class Metrics:
 
         Returns
         -------
-        numpy.ndarray
+        np.ndarray
             The confusion matrix.
         '''
-
         return self.matrix
 
     def __repr__(self) -> str:
@@ -336,14 +325,13 @@ class Metrics:
             A formatted string showing precision, recall, F1, accuracy,
             macro average, and micro average.
         '''
-
         table = ' ' * 6
-        print(f'        {table}Precision{table}Recall{table}  F1')
+        output = []
+        output.append(f"        {table}Precision{table}Recall{table}  F1")
         for i in range(len(self.precision())):
-            print(f'Class {i} {table}{self.precision()[i]:.6f} {table}{self.recall()[i]:.6f}{table}{self.f1()[i]:.6f}')
-        print()
-        print(f'Accuracy      {self.accuracy():.6f}')
-        print(f'Macro F1      {self.macro_f1():.6f}')
-        print(f'Micro F1      {self.micro_f1():.6f}')
-
-        return ''
+            output.append(f'Class {i} {table}{self.precision()[i]:.6f} {table}{self.recall()[i]:.6f}{table}{self.f1()[i]:.6f}')
+        output.append('')
+        output.append(f'Accuracy      {self.accuracy():.6f}')
+        output.append(f'Macro F1      {self.macro_f1():.6f}')
+        output.append(f'Micro F1      {self.micro_f1():.6f}')
+        return '\n'.join(output)

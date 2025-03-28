@@ -1,27 +1,77 @@
-import atexit
-from datetime import datetime
-import toml
+"""
+Experiment Executor Module (NumPy Version)
+
+This module defines the base functionality for managing and executing machine learning experiments.
+It handles the training, testing, logging, and evaluation of classifiers across multiple experiments.
+The module also supports different validation techniques (e.g., K-fold, Leave-One-Out, Bootstrap) and
+provides a flexible framework for experiment tracking and result analysis.
+
+Key Components:
+---------------
+- Executer: The base class for managing training and testing workflows.
+- NonValidExecuter: A subclass that skips validation during the experiment.
+- KFlodCrossExecuter: A subclass that uses K-fold cross-validation for validation.
+- LeaveOneCrossExecuter: A subclass that uses Leave-One-Out Cross-Validation for validation.
+- BootstrapExecuter: A subclass that uses Bootstrap resampling for validation.
+- Log management: Supports logging of experiment parameters, results, and execution time.
+
+Common Workflow:
+----------------
+1. Initialize the desired executor class (e.g., KFlodCrossExecuter, BootstrapExecuter).
+2. Define the classifier models in `clf_dict` and specify evaluation metrics.
+3. Run experiments using methods like `run_all()` or `step()`.
+4. Access experiment results through the `get_result()` method.
+
+Example Usage:
+--------------
+1. K-Fold Cross-Validation Example:
+    executer = KFlodCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, k=10, log=True)
+    executer.run_all()
+
+2. Bootstrap Resampling Example:
+    executer = BootstrapExecuter(X_train, y_train, X_test, y_test, clf_dict, n_bootstraps=100, log=True)
+    executer.run_all()
+
+3. Leave-One-Out Cross-Validation Example:
+    executer = LeaveOneCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, n_class=3, log=True)
+    executer.run_all()
+
+Attributes:
+-----------
+- X_train, y_train, X_test, y_test: Training and testing data used for model evaluation.
+- clf_dict: A dictionary of classifier models, where each key is the experiment name and value is the classifier.
+- metric_list: A list of evaluation metrics (e.g., accuracy, F1-score) for model evaluation.
+- log_dir: Directory to store log files with experiment parameters and results.
+"""
+
 import os
+import atexit
 import traceback
-from tabulate import tabulate
-import pandas as pd
+from datetime import datetime
 import numpy as np
-import numpy.random as random
+import toml
+import pandas as pd
+from tabulate import tabulate
 
 from .metric import Metrics
 
 
 def combine_mean_std(df, precision=4):
     """
-    by DeepSeek.
-    合并 _mean 和 _std 列，格式为 mean ± std，并限制浮点数的精度。
+    Merges the '_mean' and '_std' columns of a DataFrame into a single column
+    with the format 'mean ± std' and limits the precision of the floating-point numbers.
 
-    参数:
-        df (pd.DataFrame): 包含 _mean 和 _std 列的 DataFrame。
-        precision (int): 浮点数的精度（小数位数），默认为 4。
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing columns that end with '_mean' and '_std'.
+    precision : int, optional
+        The precision of the floating-point numbers, by default 4.
 
-    返回:
-        pd.DataFrame: 合并后的 DataFrame。
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame with combined 'mean ± std' columns and rounded to the specified precision.
     """
     mean_cols = [col for col in df.columns if col.endswith('_mean')]
     std_cols = [col for col in df.columns if col.endswith('_std')]
@@ -41,11 +91,18 @@ def combine_mean_std(df, precision=4):
 
 
 class Executer:
+    """
+    Base class for executing training and testing experiments.
+    """
+
     def __init__(self, X_train, y_train, X_test, y_test,
                  clf_dict: dict,
                  metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
                  log=False,
                  log_dir='./log/'):
+        """
+        Initializes the Executer class with necessary data and settings.
+        """
         self.X_train = X_train
         self.y_train = y_train
         self.X_test = X_test
@@ -54,8 +111,9 @@ class Executer:
         self.metric_list = metric_list
         self.log = log
 
-        self.df = pd.DataFrame(columns=['model'] + self.metric_list + ['training time', 'testing time'])
+        self.test = pd.DataFrame(columns=['model'] + self.metric_list + ['training time'] + ['testing time'])
 
+        # log
         if log:
             self.log_dir = log_dir
             if not os.path.exists(self.log_dir):
@@ -72,9 +130,11 @@ class Executer:
             atexit.register(self.save_df)
 
     def save_df(self):
-        self.df.to_csv(os.path.join(self.log_path, 'result.csv'), index=False)
+        """Save the experiment results to a CSV file."""
+        self.test.to_csv(os.path.join(self.log_path, 'result.csv'), index=False)
 
     def execute(self, name, clf):
+        """Run a single experiment."""
         print(f'>> {name}')
 
         clf.fit(self.X_train, self.y_train)
@@ -88,6 +148,7 @@ class Executer:
         return mtc, clf, time
 
     def logline(self, name, mtc, clf, time):
+        """Log the results of a single experiment."""
         func_list = []
         for metric in self.metric_list:
             func = getattr(mtc, metric, None)
@@ -96,9 +157,10 @@ class Executer:
             else:
                 raise ValueError(f'{metric} is not in Metric.')
 
-        self.df.loc[len(self.df)] = [name] + [func() for func in func_list] + time
+        self.test.loc[len(self.test)] = [name] + [func() for func in func_list] + time
 
     def run(self, key):
+        """Run a single experiment by key."""
         if key in self.clf_dict.keys():
             mtc, clf, time = self.execute(key, self.clf_dict[key])
             self.logline(key, mtc, clf, time)
@@ -106,6 +168,7 @@ class Executer:
             raise KeyError(f'{key} is not in clf_dict')
 
     def step(self):
+        """Run experiments iteratively until all classifiers are processed."""
         if len(self.clf_dict) == 0:
             return None
 
@@ -119,11 +182,14 @@ class Executer:
             traceback.print_exc()
 
     def format_print(self, sort_by='accuracy', ascending=False, precision=4, time=False):
+        """Format and print the results as a table."""
         if sort_by is not None:
             print(f'\n>> Test Result, sort by \'{sort_by}\'.')
-            temp_table = self.df.sort_values(sort_by, ascending=ascending)
             if not time:
-                temp_table = temp_table.drop(columns=['training time', 'testing time'])
+                temp_table = self.test.sort_values(sort_by, ascending=ascending).drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.test.sort_values(sort_by, ascending=ascending)
+
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -133,7 +199,10 @@ class Executer:
             ))
         else:
             print('\n>> Test Result.')
-            temp_table = self.df if time else self.df.drop(columns=['training time', 'testing time'])
+            if not time:
+                temp_table = self.test.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.test
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -143,27 +212,42 @@ class Executer:
             ))
 
     def run_all(self, sort_by=None, ascending=False, precision=4, time=False):
+        """Run all experiments and log the results."""
         for name, clf in self.clf_dict.items():
-            mtc, clf, time_vals = self.execute(name, clf)
-            self.logline(name, mtc, clf, time_vals)
+            mtc, clf, time = self.execute(name, clf)
+            self.logline(name, mtc, clf, time)
+
         self.format_print(sort_by, ascending, precision, time)
 
     def get_result(self):
-        return self.df
+        """Return the experiment results as a DataFrame."""
+        return self.test
 
 
 class NonValidExecuter(Executer):
-    pass
+    """Executor class for training and testing without validation."""
+
+    def __init__(self, X_train, y_train, X_test, y_test,
+                 clf_dict: dict,
+                 metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
+                 log=False,
+                 log_dir='./log/'):
+        super().__init__(X_train, y_train, X_test, y_test,
+                         clf_dict=clf_dict, metric_list=metric_list, log=log, log_dir=log_dir)
 
 
 class KFlodCrossExecuter(Executer):
+    """Executor class using K-fold cross-validation for model validation."""
+
     def __init__(self, X_train, y_train, X_test, y_test,
                  clf_dict: dict,
                  metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
                  k=10,
                  log=False,
                  log_dir='./log/'):
-        super().__init__(X_train, y_train, X_test, y_test, clf_dict, metric_list, log, log_dir)
+        super().__init__(X_train, y_train, X_test, y_test,
+                         clf_dict, metric_list, log, log_dir)
+
         self.k = k
         if k < 1:
             raise ValueError(f'k should >= 1, but get {self.k}')
@@ -173,25 +257,29 @@ class KFlodCrossExecuter(Executer):
         self.valid = pd.DataFrame(columns=['model'] + [f'{x}_{suffix}' for x in metrics for suffix in ['mean', 'std']])
 
     def execute(self, name, clf):
+        """Execute an experiment using K-fold cross-validation."""
         print(f'>> {name}')
 
+        # k-fold cross-validation
         k_fold_x_train = np.array_split(self.X_train, self.k)
         k_fold_y_train = np.array_split(self.y_train, self.k)
         mtcs = []
         times = []
+
         for i in range(self.k):
             print(f'>>>> Validate: {i + 1}')
             x_train = np.concatenate(k_fold_x_train[:i] + k_fold_x_train[i + 1:])
             y_train = np.concatenate(k_fold_y_train[:i] + k_fold_y_train[i + 1:])
             x_test = k_fold_x_train[i]
             y_test = k_fold_y_train[i]
-            clf.fit(x_train, y_train)
 
+            clf.fit(x_train, y_train)
             y_pred = clf.predict(x_test)
             mtc = Metrics(y_test, y_pred)
             times.append([clf.get_training_time(), clf.get_testing_time()])
             mtcs.append(mtc)
 
+        # real train & test
         print('>>>> Test:')
         clf.fit(self.X_train, self.y_train)
         print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
@@ -199,17 +287,25 @@ class KFlodCrossExecuter(Executer):
         y_pred = clf.predict(self.X_test)
         mtc = Metrics(self.y_test, y_pred)
         mtcs.append(mtc)
-        times.append([clf.get_training_time(), clf.get_testing_time()])
         print(f'Testing {name} Cost: {clf.get_testing_time():.4f} s')
+        times.append([clf.get_training_time(), clf.get_testing_time()])
 
         return mtcs, clf, times
 
-    def logline(self, name, mtcs, clf, times):
+    def logline(self, name, mtcs: list, clf, times):
+        """Log the results of K-fold cross-validation."""
         test_mtc = mtcs.pop()
         test_times = times.pop()
 
         def getline(mtc):
-            return [getattr(mtc, metric)() for metric in self.metric_list]
+            func_list = []
+            for metric in self.metric_list:
+                func = getattr(mtc, metric, None)
+                if callable(func):
+                    func_list.append(func)
+                else:
+                    raise ValueError(f'{metric} is not in Metric.')
+            return [func() for func in func_list]
 
         self.test.loc[len(self.test)] = [name] + getline(test_mtc) + test_times
 
@@ -227,15 +323,18 @@ class KFlodCrossExecuter(Executer):
         self.valid.loc[len(self.valid)] = [name] + valid_result
 
     def save_df(self):
+        """Save both test and validation results to CSV files."""
         self.test.to_csv(os.path.join(self.log_path, 'test.csv'), index=False)
         self.valid.to_csv(os.path.join(self.log_path, 'valid.csv'), index=False)
 
     def format_print(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False, precision=4, time=False):
+        """Format and print both test and validation results."""
         if sort_by is not None:
             print(f'\n>> Test Result, sort by \'{sort_by[0]}\'.')
-            temp_table = self.test.sort_values(sort_by[0], ascending=ascending)
             if not time:
-                temp_table = temp_table.drop(columns=['training time', 'testing time'])
+                temp_table = self.test.sort_values(sort_by[0], ascending=ascending).drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.test.sort_values(sort_by[0], ascending=ascending)
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -245,10 +344,13 @@ class KFlodCrossExecuter(Executer):
             ))
 
             print(f'\n>> Validation Result(Mean ± Std), sort by \'{sort_by[1]}\'.')
-            temp_table = self.valid.sort_values(sort_by[1], ascending=ascending)
-            temp_table = combine_mean_std(temp_table, precision=precision)
             if not time:
+                temp_table = self.valid.sort_values(sort_by[1], ascending=ascending)
+                temp_table = combine_mean_std(temp_table, precision=precision)
                 temp_table = temp_table.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.valid.sort_values(sort_by[1], ascending=ascending)
+                temp_table = combine_mean_std(temp_table, precision=precision)
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -257,7 +359,10 @@ class KFlodCrossExecuter(Executer):
             ))
         else:
             print('\n>> Test Result.')
-            temp_table = self.test if time else self.test.drop(columns=['training time', 'testing time'])
+            if not time:
+                temp_table = self.test.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.test
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -267,9 +372,13 @@ class KFlodCrossExecuter(Executer):
             ))
 
             print('\n>> Validation Result(Mean ± Std).')
-            temp_table = combine_mean_std(self.valid, precision=precision)
             if not time:
+                temp_table = self.valid
+                temp_table = combine_mean_std(temp_table, precision=precision)
                 temp_table = temp_table.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.valid
+                temp_table = combine_mean_std(temp_table, precision=precision)
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -277,14 +386,22 @@ class KFlodCrossExecuter(Executer):
                 showindex=False
             ))
 
-    def run_all(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False, precision=4, time=False):
+    def run_all(self, sort_by=['accuracy', 'accuracy_mean'], ascending=False, precision=4, time=False):
+        """Run all experiments with K-fold cross-validation."""
         for name, clf in self.clf_dict.items():
-            mtcs, clf, times = self.execute(name, clf)
-            self.logline(name, mtcs, clf, times)
+            mtc, clf, times = self.execute(name, clf)
+            self.logline(name, mtc, clf, times)
+
         self.format_print(sort_by, ascending, precision, time)
+
+    def get_result(self):
+        """Return both test and validation results."""
+        return self.test, self.valid
 
 
 class LeaveOneCrossExecuter(KFlodCrossExecuter):
+    """Executor class using Leave-One-Out Cross-Validation (LOO-CV)."""
+
     def __init__(self, X_train, y_train, X_test, y_test,
                  clf_dict: dict,
                  metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
@@ -294,35 +411,39 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
         super().__init__(X_train, y_train, X_test, y_test,
                          clf_dict=clf_dict,
                          metric_list=metric_list,
-                         k=X_train.shape[0],
-                         log=log,
-                         log_dir=log_dir)
+                         k=X_train.shape[0],  # LOO is N-fold where N is number of samples
+                         log=False,
+                         log_dir='./log/')
 
         if n_class is None:
-            raise ValueError('n_class can not be None in LeaveOneCrossExecuter.')
+            raise ValueError('n_class for LeaveOneCrossExecuter can not be None.')
         else:
             self.n_class = n_class
 
     def execute(self, name, clf):
+        """Execute an experiment using Leave-One-Out Cross-Validation."""
         print(f'>> {name}')
 
+        # k-fold cross-validation (where k = number of samples)
         k_fold_x_train = np.array_split(self.X_train, self.k)
         k_fold_y_train = np.array_split(self.y_train, self.k)
         mtcs = []
         times = []
+
         for i in range(self.k):
             print(f'>>>> Validate: {i + 1}')
             x_train = np.concatenate(k_fold_x_train[:i] + k_fold_x_train[i + 1:])
             y_train = np.concatenate(k_fold_y_train[:i] + k_fold_y_train[i + 1:])
             x_test = k_fold_x_train[i]
             y_test = k_fold_y_train[i]
-            clf.fit(x_train, y_train)
 
+            clf.fit(x_train, y_train)
             y_pred = clf.predict(x_test)
             mtc = Metrics(y_test, y_pred, self.n_class)
             times.append([clf.get_training_time(), clf.get_testing_time()])
             mtcs.append(mtc)
 
+        # real train & test
         print('>>>> Test:')
         clf.fit(self.X_train, self.y_train)
         print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
@@ -330,13 +451,15 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
         y_pred = clf.predict(self.X_test)
         mtc = Metrics(self.y_test, y_pred, self.n_class)
         mtcs.append(mtc)
-        times.append([clf.get_training_time(), clf.get_testing_time()])
         print(f'Testing {name} Cost: {clf.get_testing_time():.4f} s')
+        times.append([clf.get_training_time(), clf.get_testing_time()])
 
         return mtcs, clf, times
 
 
 class BootstrapExecuter(Executer):
+    """Executor class using Bootstrap resampling for model validation."""
+
     def __init__(self, X_train, y_train, X_test, y_test,
                  clf_dict: dict,
                  metric_list=['accuracy', 'macro_f1', 'micro_f1', 'avg_recall'],
@@ -344,34 +467,38 @@ class BootstrapExecuter(Executer):
                  log=False,
                  random_state=42,
                  log_dir='./log/'):
-        super().__init__(X_train, y_train, X_test, y_test, clf_dict, metric_list, log, log_dir)
+        super().__init__(X_train, y_train, X_test, y_test,
+                         clf_dict, metric_list, log, log_dir)
+
         self.n_bootstraps = n_bootstraps
         self.random_state = random_state
-        self.rng = random.default_rng(random_state)
+        np.random.seed(random_state)
 
         metrics = self.metric_list + ['training time', 'testing time']
         self.test = pd.DataFrame(columns=['model'] + metrics)
         self.valid = pd.DataFrame(columns=['model'] + [f'{x}_{suffix}' for x in metrics for suffix in ['mean', 'std']])
 
-    def __resample(self, X, y):
-        n_samples = X.shape[0]
-        indices = self.rng.choice(n_samples, size=n_samples, replace=True)
-        return X[indices], y[indices]
-
     def execute(self, name, clf):
+        """Execute an experiment using Bootstrap resampling."""
         print(f'>> {name}')
 
         mtcs = []
         times = []
+
         for i in range(self.n_bootstraps):
             print(f'>>>> Validate: {i + 1}')
-            X_resampled, y_resampled = self.__resample(self.X_train, self.y_train)
+            # Bootstrap sampling with replacement
+            indices = np.random.choice(len(self.X_train), size=len(self.X_train), replace=True)
+            X_resampled = self.X_train[indices]
+            y_resampled = self.y_train[indices]
+
             clf.fit(X_resampled, y_resampled)
             y_pred = clf.predict(X_resampled)
             mtc = Metrics(y_resampled, y_pred)
             times.append([clf.get_training_time(), clf.get_testing_time()])
             mtcs.append(mtc)
 
+        # real train & test
         print('>>>> Test:')
         clf.fit(self.X_train, self.y_train)
         print(f'Train {name} Cost: {clf.get_training_time():.4f} s')
@@ -379,17 +506,25 @@ class BootstrapExecuter(Executer):
         y_pred = clf.predict(self.X_test)
         mtc = Metrics(self.y_test, y_pred)
         mtcs.append(mtc)
-        times.append([clf.get_training_time(), clf.get_testing_time()])
         print(f'Testing {name} Cost: {clf.get_testing_time():.4f} s')
+        times.append([clf.get_training_time(), clf.get_testing_time()])
 
         return mtcs, clf, times
 
-    def logline(self, name, mtcs, clf, times):
+    def logline(self, name, mtcs: list, clf, times):
+        """Log the results of Bootstrap resampling."""
         test_mtc = mtcs.pop()
         test_times = times.pop()
 
         def getline(mtc):
-            return [getattr(mtc, metric)() for metric in self.metric_list]
+            func_list = []
+            for metric in self.metric_list:
+                func = getattr(mtc, metric, None)
+                if callable(func):
+                    func_list.append(func)
+                else:
+                    raise ValueError(f'{metric} is not in Metric.')
+            return [func() for func in func_list]
 
         self.test.loc[len(self.test)] = [name] + getline(test_mtc) + test_times
 
@@ -407,15 +542,18 @@ class BootstrapExecuter(Executer):
         self.valid.loc[len(self.valid)] = [name] + valid_result
 
     def save_df(self):
+        """Save both test and validation results to CSV files."""
         super().save_df()
         self.valid.to_csv(os.path.join(self.log_path, 'valid.csv'), index=False)
 
     def format_print(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False, precision=4, time=False):
+        """Format and print both test and validation results."""
         if sort_by is not None:
             print(f'\n>> Test Result, sort by \'{sort_by[0]}\'.')
-            temp_table = self.test.sort_values(sort_by[0], ascending=ascending)
             if not time:
-                temp_table = temp_table.drop(columns=['training time', 'testing time'])
+                temp_table = self.test.sort_values(sort_by[0], ascending=ascending).drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.test.sort_values(sort_by[0], ascending=ascending)
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -425,10 +563,13 @@ class BootstrapExecuter(Executer):
             ))
 
             print(f'\n>> Validation Result(Mean ± Std), sort by \'{sort_by[1]}\'.')
-            temp_table = self.valid.sort_values(sort_by[1], ascending=ascending)
-            temp_table = combine_mean_std(temp_table, precision=precision)
             if not time:
+                temp_table = self.valid.sort_values(sort_by[1], ascending=ascending)
+                temp_table = combine_mean_std(temp_table, precision=precision)
                 temp_table = temp_table.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.valid.sort_values(sort_by[1], ascending=ascending)
+                temp_table = combine_mean_std(temp_table, precision=precision)
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -437,7 +578,10 @@ class BootstrapExecuter(Executer):
             ))
         else:
             print('\n>> Test Result.')
-            temp_table = self.test if time else self.test.drop(columns=['training time', 'testing time'])
+            if not time:
+                temp_table = self.test.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.test
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -447,9 +591,13 @@ class BootstrapExecuter(Executer):
             ))
 
             print('\n>> Validation Result(Mean ± Std).')
-            temp_table = combine_mean_std(self.valid, precision=precision)
             if not time:
+                temp_table = self.valid
+                temp_table = combine_mean_std(temp_table, precision=precision)
                 temp_table = temp_table.drop(columns=['training time', 'testing time'])
+            else:
+                temp_table = self.valid
+                temp_table = combine_mean_std(temp_table, precision=precision)
             print(tabulate(
                 temp_table,
                 headers='keys',
@@ -457,8 +605,14 @@ class BootstrapExecuter(Executer):
                 showindex=False
             ))
 
-    def run_all(self, sort_by=('accuracy', 'accuracy_mean'), ascending=False, precision=4, time=False):
+    def run_all(self, sort_by=['accuracy', 'accuracy_mean'], ascending=False, precision=4, time=False):
+        """Run all experiments with Bootstrap resampling."""
         for name, clf in self.clf_dict.items():
-            mtcs, clf, times = self.execute(name, clf)
-            self.logline(name, mtcs, clf, times)
+            mtc, clf, times = self.execute(name, clf)
+            self.logline(name, mtc, clf, times)
+
         self.format_print(sort_by, ascending, precision, time)
+
+    def get_result(self):
+        """Return both test and validation results."""
+        return self.test, self.valid
