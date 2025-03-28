@@ -104,14 +104,20 @@ class Metrics:
         if len(self.y.shape) == 1:
             temp_y = self.y
         elif len(self.y.shape) == 2:
-            temp_y = jnp.argmax(self.y, axis=1)
+            if self.y.shape[0] == 1 or self.y.shape[1] == 1:
+                temp_y = self.y.reshape(-1)
+            else:
+                temp_y = jnp.argmax(self.y, axis=1)
         else:
             raise ValueError('Input y must be 1D or 2D.')
 
         if len(self.y_pred.shape) == 1:
             temp_y_pred = self.y_pred
         if len(self.y_pred.shape) == 2:
-            temp_y_pred = jnp.argmax(self.y_pred, axis=1)
+            if self.y_pred.shape[0] == 1 or self.y_pred.shape[1] == 1:
+                temp_y_pred = self.y_pred.reshape(-1)
+            else:
+                temp_y_pred = jnp.argmax(self.y_pred, axis=1)
         elif len(self.y_pred.shape) > 2:
             raise ValueError('Input y_pred must be 1D or 2D.')
 
