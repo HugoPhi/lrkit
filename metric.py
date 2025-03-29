@@ -53,6 +53,12 @@ class Metrics:
     The class supports both single-label and multi-class classification problems, with options for
     handling probability-based predictions.
 
+    Notes:
+    ------
+    - The class requires the true labels (y) and the predicted labels or probabilities (y_pred), it may shapes: (N,), (N, C), (N, 1), (1, N).
+    - The number of classes (classes) can be specified explicitly, otherwise, it will be determined based on the unique labels in y.
+    - If you want to calculate one of AP, ROC, AUC, you need to pass in y and y_pred as probabilities.
+
     Key Metrics:
     -------------
     - Precision: Measures the ratio of true positives to predicted positives for each class.
@@ -78,7 +84,13 @@ class Metrics:
 
     def __init__(self, y, y_pred, classes=None):
         '''
-        Initialize the Metrics class to compute evaluation metrics. y & y_pred should be 1D or 2D & labeled start from '0'.
+        Initialize the Metrics class to compute evaluation metrics.
+
+        Notes:
+        ------
+        - The class requires the true labels (y) and the predicted labels or probabilities (y_pred), it may shapes: (N,), (N, C), (N, 1), (1, N).
+        - The number of classes (classes) can be specified explicitly, otherwise, it will be determined based on the unique labels in y.
+        - If you want to calculate one of AP, ROC, AUC, you need to pass in y and y_pred as probabilities.
 
         Parameters:
         ----------
@@ -93,40 +105,41 @@ class Metrics:
         self.y = y
         self.y_pred = y_pred
 
+        assert len(self.y.shape) == 1 or len(self.y.shape) == 2, 'Input true label y must be 1D or 2D. Which get shape: {}'.format(self.y_pred.shape)
+        assert len(self.y_pred.shape) == 1 or len(self.y_pred.shape) == 2, 'Input predict label y must be 1D or 2D. Which get shape: {}'.format(self.y_pred.shape)
+
+        def corrct_shape(x):
+            '''
+            (N,), (N, C), (N, 1), (1, N) -> (N,)
+            '''
+            if len(x.shape) == 1:  # (N,)
+                return x
+            elif len(x.shape) == 2:  # (N, C) or (N, 1) or (1, N)
+                if x.shape[0] == 1 or x.shape[1] == 1:  # (N, 1) or (1, N)
+                    return x.reshape(-1)
+                else:  # (N, C)
+                    return jnp.argmax(x, axis=1)
+
+        c_y = corrct_shape(self.y)
+        c_y_pred = corrct_shape(self.y_pred)
+
         if classes is not None:
             self.classes = classes
         else:
-            uni = jnp.unique(self.y)
-            self.classes = uni.shape[0]  # get classes num
+            c1 = jnp.unique(c_y).shape[0]
+            c2 = jnp.unique(c_y_pred).shape[0]
+            assert c1 == c2, 'The number of unique labels in y and y_pred must be the same, where true label number: {}, predict label number: {}'.format(c1, c2)
+
+            self.classes = c1
 
         self.matrix = jnp.zeros((self.classes, self.classes))  # get confusion matrix
-
-        if len(self.y.shape) == 1:
-            temp_y = self.y
-        elif len(self.y.shape) == 2:
-            if self.y.shape[0] == 1 or self.y.shape[1] == 1:
-                temp_y = self.y.reshape(-1)
-            else:
-                temp_y = jnp.argmax(self.y, axis=1)
-        else:
-            raise ValueError('Input y must be 1D or 2D.')
-
-        if len(self.y_pred.shape) == 1:
-            temp_y_pred = self.y_pred
-        if len(self.y_pred.shape) == 2:
-            if self.y_pred.shape[0] == 1 or self.y_pred.shape[1] == 1:
-                temp_y_pred = self.y_pred.reshape(-1)
-            else:
-                temp_y_pred = jnp.argmax(self.y_pred, axis=1)
-        elif len(self.y_pred.shape) > 2:
-            raise ValueError('Input y_pred must be 1D or 2D.')
 
         if len(self.y.shape) == 2 and len(self.y_pred.shape) == 2:
             self.proba = True
         else:
             self.proba = False
 
-        for i, j in zip(temp_y, temp_y_pred):
+        for i, j in zip(c_y, c_y_pred):
             self.matrix = self.matrix.at[i, j].set(
                 self.matrix[i, j] + 1
             )

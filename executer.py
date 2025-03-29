@@ -250,7 +250,7 @@ class Executer:
 
         return mtc, clf, time  # 返回测试器和分类器
 
-    def logline(self, name, mtc, clf, time):
+    def logline(self, name, mtc, time):
         """
         Log the results of a single experiment into the DataFrame.
 
@@ -295,7 +295,8 @@ class Executer:
         if key in self.clf_dict.keys():
             mtc, clf, time = self.execute(key, self.clf_dict[key])
 
-            self.logline(key, mtc, clf, time)
+            self.logline(key, mtc, time)
+            return mtc, clf
         else:
             raise KeyError(f'{key} is not in clf_dict')
 
@@ -323,9 +324,9 @@ class Executer:
 
             mtc, clf, time = self.execute(name, clf)
 
-            self.logline(name, mtc, clf, time)
+            self.logline(name, mtc, time)
 
-            return name, clf
+            return name, mtc, clf
         except Exception as e:
             print(f'Error: {e}')
             traceback.print_exc()
@@ -400,7 +401,7 @@ class Executer:
         for name, clf in self.clf_dict.items():
             mtc, clf, time = self.execute(name, clf)
 
-            self.logline(name, mtc, clf, time)
+            self.logline(name, mtc, time)
 
         self.format_print(sort_by, ascending, precision, time)
 
@@ -635,7 +636,7 @@ class KFlodCrossExecuter(Executer):
 
         return mtcs, clf, times  # 返回所有测试器和分类器和验证时间
 
-    def logline(self, name, mtcs: list, clf, times):
+    def logline(self, name, mtcs: list, times):
         """
         Logs the results of an experiment into the DataFrame for both testing and validation.
 
@@ -655,8 +656,8 @@ class KFlodCrossExecuter(Executer):
         After an experiment, this method stores the results into the DataFrame for later analysis.
         """
 
-        test_mtc = mtcs.pop()
-        test_times = times.pop()
+        test_mtc = mtcs[-1]
+        test_times = times[-1]
 
         def getline(mtc):
             func_list = []
@@ -671,7 +672,7 @@ class KFlodCrossExecuter(Executer):
 
         self.test.loc[len(self.test)] = [name] + getline(test_mtc) + test_times  # 获取测试的结果
 
-        valid_rows = [getline(mtc) + times[ix] for ix, mtc in enumerate(mtcs)]
+        valid_rows = [getline(mtc) + times[ix] for ix, mtc in enumerate(mtcs[:-1])]
         valids_array = jnp.array(valid_rows)
 
         mean_vals = jnp.mean(valids_array, axis=0).tolist()
@@ -796,7 +797,7 @@ class KFlodCrossExecuter(Executer):
         for name, clf in self.clf_dict.items():
             mtc, clf, times = self.execute(name, clf)
 
-            self.logline(name, mtc, clf, times)
+            self.logline(name, mtc, times)
 
         self.format_print(sort_by, ascending, precision, time)
 
@@ -1135,7 +1136,7 @@ class BootstrapExecuter(Executer):
 
         return mtcs, clf, times
 
-    def logline(self, name, mtcs: list, clf, times):
+    def logline(self, name, mtcs: list, times):
         """
         Logs the results of an experiment into the DataFrame for both testing and validation.
 
@@ -1155,8 +1156,8 @@ class BootstrapExecuter(Executer):
         After the experiment execution, the results are logged into the DataFrame for later analysis.
         """
 
-        test_mtc = mtcs.pop()
-        test_times = times.pop()
+        test_mtc = mtcs[-1]
+        test_times = times[-1]
 
         def getline(mtc):
             func_list = []
@@ -1171,7 +1172,7 @@ class BootstrapExecuter(Executer):
 
         self.test.loc[len(self.test)] = [name] + getline(test_mtc) + test_times  # 获取测试的结果
 
-        valid_rows = [getline(mtc) + times[ix] for ix, mtc in enumerate(mtcs)]
+        valid_rows = [getline(mtc) + times[ix] for ix, mtc in enumerate(mtcs[:-1])]
         valids_array = jnp.array(valid_rows)
 
         mean_vals = jnp.mean(valids_array, axis=0).tolist()
@@ -1296,7 +1297,7 @@ class BootstrapExecuter(Executer):
         for name, clf in self.clf_dict.items():
             mtc, clf, times = self.execute(name, clf)
 
-            self.logline(name, mtc, clf, times)
+            self.logline(name, mtc, times)
 
         self.format_print(sort_by, ascending, precision, time)
 
