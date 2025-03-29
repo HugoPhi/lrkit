@@ -1,5 +1,5 @@
 """
-Classifier Interface Module
+Classifier Interface Module(Numpy Version)
 
 This module provides an abstract base class for creating classifier implementations with
 consistent APIs, along with utility decorators for timing measurements. The design enables:
