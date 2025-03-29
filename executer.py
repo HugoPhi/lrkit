@@ -24,15 +24,15 @@ Common Workflow:
 
 Example Usage:
 --------------
-1. K-Fold Cross-Validation Example:
+1. K-Fold Cross-Validation Examples
     executer = KFlodCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, k=10, log=True)
     executer.run_all()
 
-2. Bootstrap Resampling Example:
+2. Bootstrap Resampling Examples
     executer = BootstrapExecuter(X_train, y_train, X_test, y_test, clf_dict, n_bootstraps=100, log=True)
     executer.run_all()
 
-3. Leave-One-Out Cross-Validation Example:
+3. Leave-One-Out Cross-Validation Examples
     executer = LeaveOneCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, n_class=3, log=True)
     executer.run_all()
 
@@ -197,7 +197,8 @@ class Executer:
         """
         Save the experiment results (DataFrame) to a CSV file in the log directory.
 
-        Example:
+        Examples
+        --------
         After running experiments, the DataFrame with all results is saved to
         'result.csv' in the appropriate log folder.
         """
@@ -222,7 +223,7 @@ class Executer:
         metric : Metrics
             A Metrics instance containing the evaluation results.
 
-        Example:
+        Examples
         To override the `execute` method, use the following structure:
         ```python
         class MyExecuter(Executer):
@@ -265,7 +266,7 @@ class Executer:
         time : list
             The list containing training and testing times.
 
-        Example:
+        Examples
         After an experiment, the result is logged into the DataFrame for future analysis.
         """
 
@@ -288,8 +289,16 @@ class Executer:
         key : str
             The name of the experiment.
 
-        Example:
-        executer.run('experiment_name')  # Runs the specified experiment
+        Returns
+        -------
+        mtc : Metric
+            Metrics with result.
+        clf : Clfs
+            The classifier object for the experiment.
+
+        Examples
+        --------
+        >>> executer.run('experiment_name')  # Runs the specified experiment
         """
 
         if key in self.clf_dict.keys():
@@ -308,12 +317,15 @@ class Executer:
         -------
         name : str
             The name of the experiment.
+        mtc : Metric
+            Metrics with result.
         clf : Clfs
             The classifier object for the experiment.
 
-        Example:
-        for name, clf in executer.step():
-            print(f'Running {name} using classifier {clf}')
+        Examples
+        --------
+        >>> for name, clf in executer.step():
+        >>>     print(f'Running {name} using classifier {clf}')
         """
 
         if len(self.clf_dict) == 0:
@@ -346,8 +358,9 @@ class Executer:
         time : bool
             Whether to display training and testing time.
 
-        Example:
-        executer.format_print(sort_by='accuracy', ascending=True)
+        Examples
+        --------
+        >>> executer.format_print(sort_by='accuracy', ascending=True)
         """
 
         if sort_by is not None:
@@ -394,8 +407,9 @@ class Executer:
         time : bool
             Whether to display training and testing time.
 
-        Example:
-        executer.run_all(sort_by='accuracy', ascending=False)
+        Examples
+        --------
+        >>> executer.run_all(sort_by='accuracy', ascending=False)
         """
 
         for name, clf in self.clf_dict.items():
@@ -414,8 +428,9 @@ class Executer:
         pd.DataFrame
             DataFrame containing the experiment results.
 
-        Example:
-        test = executer.get_result()  # Get the result DataFrame
+        Examples
+        --------
+        >>> test = executer.get_result()  # Get the result DataFrame
         """
 
         return self.test
@@ -456,11 +471,11 @@ class NonValidExecuter(Executer):
     log_dir : str, optional
         Directory where logs will be saved. If logging is enabled, logs will be saved in a subfolder named with the current timestamp. Default is `'./log/'`.
 
-    Example:
+    Examples
     --------
-    # Example usage for running an experiment without validation:
-    executer = NonValidExecuter(X_train, y_train, X_test, y_test, clf_dict, log=True)
-    executer.run_all()
+    >>> # Example usage for running an experiment without validation:
+    >>> executer = NonValidExecuter(X_train, y_train, X_test, y_test, clf_dict, log=True)
+    >>> executer.run_all()
     """
 
     def __init__(self, X_train, y_train, X_test, y_test,
@@ -476,9 +491,9 @@ class NonValidExecuter(Executer):
 
         Parameters are the same as described in the class-level docstring.
 
-        Example:
+        Examples
         --------
-        executer = NonValidExecuter(X_train, y_train, X_test, y_test, clf_dict)
+        >>> executer = NonValidExecuter(X_train, y_train, X_test, y_test, clf_dict)
         """
 
         super(NonValidExecuter, self).__init__(X_train, y_train, X_test, y_test,
@@ -522,11 +537,11 @@ class KFlodCrossExecuter(Executer):
     log_dir : str, optional
         Directory where logs will be stored. Default is './log/'.
 
-    Example:
+    Examples
     --------
-    # Example usage for running K-fold cross-validation experiments:
-    executer = KFlodCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, k=5, log=True)
-    executer.run_all()
+    >>> # Example usage for running K-fold cross-validation experiments:
+    >>> executer = KFlodCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, k=5, log=True)
+    >>> executer.run_all()
     """
 
     def __init__(self, X_train, y_train, X_test, y_test,
@@ -553,9 +568,9 @@ class KFlodCrossExecuter(Executer):
         log_dir : str, optional
             Directory where logs are saved. Default is './log/'.
 
-        Example:
+        Examples
         --------
-        executer = KFlodCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, k=5, log=True)
+        >>> executer = KFlodCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, k=5, log=True)
         """
 
         super(KFlodCrossExecuter, self).__init__(X_train, y_train, X_test, y_test,
@@ -588,7 +603,7 @@ class KFlodCrossExecuter(Executer):
         metric : Metrics
             Recorded metrics for the experiment.
 
-        Example:
+        Examples
         --------
         You can override this method for custom behavior like so:
         ```python
@@ -651,7 +666,7 @@ class KFlodCrossExecuter(Executer):
         times : list
             List containing training and testing times.
 
-        Example:
+        Examples
         --------
         After an experiment, this method stores the results into the DataFrame for later analysis.
         """
@@ -689,7 +704,7 @@ class KFlodCrossExecuter(Executer):
         """
         Saves the results DataFrame to CSV files in the log directory.
 
-        Example:
+        Examples
         --------
         This method is invoked to save both test and validation results after all experiments.
         """
@@ -712,9 +727,9 @@ class KFlodCrossExecuter(Executer):
         time : bool
             Whether to display training and testing times.
 
-        Example:
+        Examples
         --------
-        executer.format_print(sort_by=('accuracy', 'accuracy_mean'), ascending=True)
+        >>> executer.format_print(sort_by=('accuracy', 'accuracy_mean'), ascending=True)
         """
 
         if sort_by is not None:
@@ -789,9 +804,9 @@ class KFlodCrossExecuter(Executer):
         time : bool
             Whether to include training and testing times in the output.
 
-        Example:
+        Examples
         --------
-        executer.run_all(sort_by=['accuracy', 'accuracy_mean'], ascending=True)
+        >>> executer.run_all(sort_by=['accuracy', 'accuracy_mean'], ascending=True)
         """
 
         for name, clf in self.clf_dict.items():
@@ -810,8 +825,9 @@ class KFlodCrossExecuter(Executer):
         pd.DataFrame
             DataFrame containing the experiment results.
 
-        Example:
-        test, valid = executer.get_result()  # Get the result DataFrame
+        Examples
+        --------
+        >>> test, valid = executer.get_result()  # Get the result DataFrame
         """
 
         return self.test, self.valid
@@ -854,11 +870,11 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
     n_class : int
         The number of classes in the classification task.
 
-    Example:
+    Examples
     --------
-    # Example usage for running LOO-CV experiments:
-    executer = LeaveOneCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, n_class=3, log=True)
-    executer.run_all()
+    >>> # Example usage for running LOO-CV experiments:
+    >>> executer = LeaveOneCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, n_class=3, log=True)
+    >>> executer.run_all()
     """
 
     def __init__(self, X_train, y_train, X_test, y_test,
@@ -885,9 +901,9 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
         log_dir : str, optional
             Directory where logs will be saved. Default is `'./log/'`.
 
-        Example:
+        Examples
         --------
-        executer = LeaveOneCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, n_class=3, log=True)
+        >>> executer = LeaveOneCrossExecuter(X_train, y_train, X_test, y_test, clf_dict, n_class=3, log=True)
         """
 
         super(LeaveOneCrossExecuter, self).__init__(X_train, y_train, X_test, y_test,
@@ -920,7 +936,7 @@ class LeaveOneCrossExecuter(KFlodCrossExecuter):
         metric : Metrics
             Recorded metrics for the experiment.
 
-        Example:
+        Examples
         --------
         You can override this method for custom behavior like so:
         ```python
@@ -1008,11 +1024,11 @@ class BootstrapExecuter(Executer):
     log_dir : str, optional
         Directory where logs will be saved. Default is `'./log/'`.
 
-    Example:
+    Examples
     --------
-    # Example usage for running Bootstrap resampling experiments:
-    executer = BootstrapExecuter(X_train, y_train, X_test, y_test, clf_dict, n_bootstraps=50, log=True)
-    executer.run_all()
+    >>> # Example usage for running Bootstrap resampling experiments:
+    >>> executer = BootstrapExecuter(X_train, y_train, X_test, y_test, clf_dict, n_bootstraps=50, log=True)
+    >>> executer.run_all()
     """
 
     def __init__(self, X_train, y_train, X_test, y_test,
@@ -1027,9 +1043,9 @@ class BootstrapExecuter(Executer):
 
         Parameters are the same as described in the class-level docstring.
 
-        Example:
+        Examples
         --------
-        executer = BootstrapExecuter(X_train, y_train, X_test, y_test, clf_dict)
+        >>> executer = BootstrapExecuter(X_train, y_train, X_test, y_test, clf_dict)
         """
 
         super(BootstrapExecuter, self).__init__(X_train, y_train, X_test, y_test,
@@ -1061,7 +1077,7 @@ class BootstrapExecuter(Executer):
         metric : Metrics
             Recorded metrics for the experiment.
 
-        Example:
+        Examples
         --------
         You can override this method for custom behavior like so:
         ```python
@@ -1151,7 +1167,7 @@ class BootstrapExecuter(Executer):
         times : list
             List containing training and testing times for each resample and final test.
 
-        Example:
+        Examples
         --------
         After the experiment execution, the results are logged into the DataFrame for later analysis.
         """
@@ -1189,7 +1205,7 @@ class BootstrapExecuter(Executer):
         """
         Saves the results DataFrame to CSV files in the log directory.
 
-        Example:
+        Examples
         --------
         After running experiments, the results are saved in `test.csv` and `valid.csv` under the log directory.
         """
@@ -1212,9 +1228,9 @@ class BootstrapExecuter(Executer):
         time : bool
             Whether to display training and testing times.
 
-        Example:
+        Examples
         --------
-        executer.format_print(sort_by=('accuracy', 'accuracy_mean'), ascending=True)
+        >>> executer.format_print(sort_by=('accuracy', 'accuracy_mean'), ascending=True)
         """
 
         if sort_by is not None:
@@ -1289,9 +1305,9 @@ class BootstrapExecuter(Executer):
         time : bool
             Whether to include training and testing times in the output.
 
-        Example:
+        Examples
         --------
-        executer.run_all(sort_by=['accuracy', 'accuracy_mean'], ascending=True)
+        >>> executer.run_all(sort_by=['accuracy', 'accuracy_mean'], ascending=True)
         """
 
         for name, clf in self.clf_dict.items():
@@ -1310,8 +1326,9 @@ class BootstrapExecuter(Executer):
         pd.DataFrame
             DataFrame containing the experiment results.
 
-        Example:
-        test, valid = executer.get_result()  # Get the result DataFrame
+        Examples
+        --------
+        >>> test, valid = executer.get_result()  # Get the result DataFrame
         """
 
         return self.test, self.valid
