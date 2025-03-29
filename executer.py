@@ -147,7 +147,7 @@ class Executer:
         time = [clf.get_training_time(), clf.get_testing_time()]
         return mtc, clf, time
 
-    def logline(self, name, mtc, clf, time):
+    def logline(self, name, mtc, time):
         """Log the results of a single experiment."""
         func_list = []
         for metric in self.metric_list:
@@ -163,7 +163,8 @@ class Executer:
         """Run a single experiment by key."""
         if key in self.clf_dict.keys():
             mtc, clf, time = self.execute(key, self.clf_dict[key])
-            self.logline(key, mtc, clf, time)
+            self.logline(key, mtc, time)
+            return mtc, clf
         else:
             raise KeyError(f'{key} is not in clf_dict')
 
@@ -176,7 +177,7 @@ class Executer:
             name, clf = self.clf_dict.popitem()
             mtc, clf, time = self.execute(name, clf)
             self.logline(name, mtc, clf, time)
-            return name, clf
+            return name, mtc, clf
         except Exception as e:
             print(f'Error: {e}')
             traceback.print_exc()
@@ -292,10 +293,10 @@ class KFlodCrossExecuter(Executer):
 
         return mtcs, clf, times
 
-    def logline(self, name, mtcs: list, clf, times):
+    def logline(self, name, mtcs: list, times):
         """Log the results of K-fold cross-validation."""
-        test_mtc = mtcs.pop()
-        test_times = times.pop()
+        test_mtc = mtcs[-1]
+        test_times = times[-1]
 
         def getline(mtc):
             func_list = []
@@ -309,7 +310,7 @@ class KFlodCrossExecuter(Executer):
 
         self.test.loc[len(self.test)] = [name] + getline(test_mtc) + test_times
 
-        valid_rows = [getline(mtc) + times[ix] for ix, mtc in enumerate(mtcs)]
+        valid_rows = [getline(mtc) + times[ix] for ix, mtc in enumerate(mtcs[:-1])]
         valids_array = np.array(valid_rows)
 
         mean_vals = np.mean(valids_array, axis=0).tolist()
@@ -511,10 +512,10 @@ class BootstrapExecuter(Executer):
 
         return mtcs, clf, times
 
-    def logline(self, name, mtcs: list, clf, times):
+    def logline(self, name, mtcs: list, times):
         """Log the results of Bootstrap resampling."""
-        test_mtc = mtcs.pop()
-        test_times = times.pop()
+        test_mtc = mtcs[-1]
+        test_times = times[-1]
 
         def getline(mtc):
             func_list = []
@@ -528,7 +529,7 @@ class BootstrapExecuter(Executer):
 
         self.test.loc[len(self.test)] = [name] + getline(test_mtc) + test_times
 
-        valid_rows = [getline(mtc) + times[ix] for ix, mtc in enumerate(mtcs)]
+        valid_rows = [getline(mtc) + times[ix] for ix, mtc in enumerate(mtcs[:-1])]
         valids_array = np.array(valid_rows)
 
         mean_vals = np.mean(valids_array, axis=0).tolist()
