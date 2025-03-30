@@ -104,6 +104,7 @@ class Metrics:
 
         self.y = y
         self.y_pred = y_pred
+        self.num_classes = 0
 
         assert len(self.y.shape) == 1 or len(self.y.shape) == 2, 'Input true label y must be 1D or 2D. Which get shape: {}'.format(self.y_pred.shape)
         assert len(self.y_pred.shape) == 1 or len(self.y_pred.shape) == 2, 'Input predict label y must be 1D or 2D. Which get shape: {}'.format(self.y_pred.shape)
@@ -118,23 +119,30 @@ class Metrics:
                 if x.shape[0] == 1 or x.shape[1] == 1:  # (N, 1) or (1, N)
                     return x.reshape(-1)
                 else:  # (N, C)
+                    self.num_classes = x.shape[1]  # get number of classes
                     return jnp.argmax(x, axis=1)
 
         c_y = corrct_shape(self.y)
         c_y_pred = corrct_shape(self.y_pred)
 
-        if classes is not None:
+        if classes is not None:  # make sure actual_classes <= manual set classes
+            self.classes = classes
+
+            actual_classes = max(jnp.unique(c_y).max(), jnp.unique(c_y_pred).max()) + 1  # make sure actual_classes <= classes
+            assert actual_classes <= classes, (
+                f"Specified classes ({classes}) < actual classes ({actual_classes}) !!!"
+            )
             self.classes = classes
         else:
             c1 = jnp.unique(c_y).shape[0]
-            c2 = jnp.unique(c_y_pred).shape[0]
+            c2 = jnp.unique(c_y_pred).shape[0] if self.num_classes == 0 else self.num_classes
             assert c1 == c2, 'The number of unique labels in y and y_pred must be the same, where true label number: {}, predict label number: {}'.format(c1, c2)
 
             self.classes = c1
 
         self.matrix = jnp.zeros((self.classes, self.classes))  # get confusion matrix
 
-        if len(self.y.shape) == 2 and len(self.y_pred.shape) == 2:
+        if len(self.y_pred.shape) == 2 and self.y_pred.shape[1] > 1:
             self.proba = True
         else:
             self.proba = False
@@ -143,6 +151,8 @@ class Metrics:
             self.matrix = self.matrix.at[i, j].set(
                 self.matrix[i, j] + 1
             )
+
+        self.matrix = self.matrix.astype(jnp.float32)
 
     def precision(self):
         '''
@@ -155,6 +165,7 @@ class Metrics:
         numpy.ndarray
             The precision of each class.
         '''
+
         return jnp.diag(self.matrix) / self.matrix.sum(axis=0)
 
     def recall(self):
@@ -183,7 +194,12 @@ class Metrics:
             The F1 score of each class.
         '''
 
-        return 2 * self.precision() * self.recall() / (self.precision() + self.recall())
+        # return 2 * self.precision() * self.recall() / (self.precision() + self.recall())
+
+        p = self.precision()
+        r = self.recall()
+        denominator = p + r
+        return jnp.where(denominator != 0, 2 * p * r / denominator, 0.0)
 
     def accuracy(self):
         '''
@@ -279,32 +295,30 @@ class Metrics:
         '''
 
         if not self.proba:
-            raise ValueError('ap() can only be called when y & y_pred are proba matrix')
-
-        def calculate_prec_rec(y_true, y_pred):
-            tp = jnp.sum((y_pred == 1) & (y_true == 1))
-            fp = jnp.sum((y_pred == 1) & (y_true == 0))
-            fn = jnp.sum((y_pred == 0) & (y_true == 1))
-
-            prec = tp / (tp + fp) if (tp + fp) > 0 else 0
-            rec = tp / (tp + fn) if (fp + fn) > 0 else 0
-            return prec, rec
+            raise ValueError("ap() requires probability predictions")
 
         aps = []
         for class_idx in range(self.classes):
-            precs = []
-            recs = []
-            thresholds = self.y_pred[:, class_idx].reshape(-1)
-            for threshold in jnp.sort(thresholds)[::-1]:
-                idx_pred = (self.y_pred[:, class_idx] >= threshold).astype(int)  # '=' here is important
-                idx_true = (self.y == class_idx).astype(int).reshape(-1)
-                prec, rec = calculate_prec_rec(idx_true, idx_pred)
-                precs.append(prec)
-                recs.append(rec)
+            y_score = self.y_pred[:, class_idx]
+            y_true = (self.y == class_idx).astype(int)
 
-            ap = 0
-            for i in range(1, len(recs)):
-                ap += (recs[i] - recs[i - 1]) * (precs[i] + precs[i - 1]) / 2
+            desc_indices = jnp.argsort(y_score)[::-1]
+            y_score = y_score[desc_indices]
+            y_true = y_true[desc_indices]
+
+            tps = jnp.cumsum(y_true)
+            fps = jnp.cumsum(1 - y_true)
+
+            precisions = tps / (tps + fps + 1e-10)
+            recalls = tps / (jnp.sum(y_true) + 1e-10)
+
+            precisions = jnp.concatenate([jnp.array([1.0]), precisions])
+            recalls = jnp.concatenate([jnp.array([0.0]), recalls])
+
+            ap = 0.0
+            for k in range(1, len(precisions)):
+                ap += (recalls[k] - recalls[k - 1]) * precisions[k]
+
             aps.append(ap)
 
         return jnp.array(aps)
