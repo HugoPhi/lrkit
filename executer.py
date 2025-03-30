@@ -327,7 +327,7 @@ class Executer:
         try:
             name, clf = self.clf_dict.popitem()
             mtc, clf, time = self.execute(name, clf)
-            self.logline(name, mtc, clf, time)
+            self.logline(name, mtc, time)
             return name, mtc, clf
         except Exception as e:
             print(f'Error: {e}')
@@ -403,7 +403,7 @@ class Executer:
 
         for name, clf in self.clf_dict.items():
             mtc, clf, time = self.execute(name, clf)
-            self.logline(name, mtc, clf, time)
+            self.logline(name, mtc, time)
 
         self.format_print(sort_by, ascending, precision, time)
 
@@ -761,7 +761,7 @@ class KFlodCrossExecuter(Executer):
 
         for name, clf in self.clf_dict.items():
             mtc, clf, times = self.execute(name, clf)
-            self.logline(name, mtc, clf, times)
+            self.logline(name, mtc, times)
 
         self.format_print(sort_by, ascending, precision, time)
 
@@ -1196,7 +1196,7 @@ class BootstrapExecuter(Executer):
 
         for name, clf in self.clf_dict.items():
             mtc, clf, times = self.execute(name, clf)
-            self.logline(name, mtc, clf, times)
+            self.logline(name, mtc, times)
 
         self.format_print(sort_by, ascending, precision, time)
 
